@@ -268,11 +268,15 @@ label.check {
 }
 .nav {
   display: flex;
-  gap: 0.25rem;
+  gap: 0.15rem;
   overflow-x: auto;
+  min-width: 0;
+  flex: 0 1 auto;
+  scrollbar-width: none;
 }
 .nav a {
-  padding: 0.45em 0.95em;
+  white-space: nowrap;
+  padding: 0.45em 0.8em;
   border-radius: 999px;
   text-decoration: none;
   color: var(--muted);
@@ -829,10 +833,13 @@ textarea {
   margin-top: 0.6rem;
   grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
 }
-.art-options.background {
+.art-options-background {
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
 }
 .art-option {
+  /* Block, not the buttons' inline-flex: a flex button sizes its row by the image's full height. */
+  display: block;
+  min-width: 0;
   padding: 0;
   border-radius: 8px;
   overflow: hidden;
@@ -846,10 +853,11 @@ textarea {
 .art-option img {
   display: block;
   width: 100%;
+  height: auto;
   aspect-ratio: 2 / 3;
   object-fit: cover;
 }
-.art-options.background .art-option img {
+.art-options-background .art-option img {
   aspect-ratio: 16 / 9;
 }
 .grid-form {
@@ -1211,4 +1219,417 @@ button.small,
   display: grid;
   gap: 0.4rem;
   margin: 0.5rem 0 1rem;
+}
+
+/* In-app page for a game from Discover or the calendar */
+.discover-game .trailer {
+  max-width: 960px;
+}
+.screenshots {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(260px, 32%);
+  gap: 0.75rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+}
+.screenshot {
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: zoom-in;
+}
+.screenshot img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+}
+.lightbox-image {
+  max-width: 92vw;
+  max-height: 88vh;
+  border-radius: 10px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+.video-frame video {
+  width: 100%;
+  height: 100%;
+}
+.discover-game .summary {
+  white-space: pre-line;
+}
+
+/* Emulation shelf */
+.grid-shaped .cover {
+  aspect-ratio: var(--cover-aspect, 0.75);
+  object-fit: cover;
+}
+.system-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.5rem 0 1.25rem;
+}
+.system-tabs a {
+  padding: 0.3em 0.85em;
+  border-radius: 999px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.15));
+  border-left: 4px solid var(--system, var(--accent));
+  color: inherit;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.system-tabs a.active {
+  background: color-mix(in srgb, var(--system, var(--accent)) 30%, transparent);
+}
+.system-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+.system-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 1.1rem 1.2rem;
+  border-radius: var(--radius, 12px);
+  color: inherit;
+  text-decoration: none;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--system) 45%, transparent), color-mix(in srgb, var(--system) 8%, transparent));
+  border: 1px solid color-mix(in srgb, var(--system) 60%, transparent);
+  transition: transform 0.12s ease;
+}
+.system-tile:hover,
+.system-tile:focus-visible {
+  transform: translateY(-2px);
+}
+.system-short {
+  font-size: 1.6rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+.system-name {
+  font-weight: 700;
+}
+.system-banner {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  padding: 1.1rem 1.4rem;
+  margin-bottom: 0.5rem;
+  border-radius: var(--radius, 12px);
+  background: linear-gradient(110deg, color-mix(in srgb, var(--system) 55%, transparent), transparent 75%);
+}
+.system-banner h1 {
+  margin: 0;
+}
+.system-banner .system-short {
+  font-size: 2.4rem;
+  min-width: 4.5rem;
+}
+.badge-platform {
+  border-width: 2px;
+}
+.code-block {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 0.8rem 1rem;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.emulator-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
+.emulator-card h2 {
+  margin: 0;
+}
+.bios-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.6rem 0;
+}
+.bios-list li {
+  margin: 0.3rem 0;
+}
+.bios-list .ok {
+  color: var(--good, #59ff9a);
+}
+.bios-list .missing {
+  color: var(--bad, #ff6b6b);
+}
+.send-to {
+  margin-bottom: 0.6rem;
+}
+
+/* Playing in the browser */
+.play-browser {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  height: calc(100vh - 120px);
+}
+.play-frame {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  border-radius: var(--radius, 12px);
+  background: #000;
+}
+
+/* Covers: never cropped */
+.cover-frame {
+  position: relative;
+  overflow: hidden;
+}
+.cover-frame img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.cover-blur {
+  position: absolute;
+  inset: -12%;
+  background-size: cover;
+  background-position: center;
+  filter: blur(16px) brightness(0.55);
+}
+.cover.cover-natural {
+  aspect-ratio: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+/* Discover tabs */
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 16px;
+  border-bottom: 1px solid var(--border);
+}
+.tabs button {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 8px 14px;
+  color: var(--muted);
+}
+.tabs button.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+/* Free games */
+.free-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 14px;
+}
+.free-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  min-width: 0;
+}
+.free-card.upcoming {
+  opacity: 0.75;
+}
+.free-art {
+  display: block;
+  aspect-ratio: 460 / 215;
+  background: var(--bg);
+}
+.free-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.free-art-empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--muted);
+  font-weight: 600;
+}
+.free-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px 12px;
+}
+.free-body strong {
+  overflow-wrap: anywhere;
+}
+
+/* Latest updates */
+.updates .update {
+  display: block;
+  padding: 0;
+}
+.update-head {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  background: none;
+  border: none;
+  padding: 10px 0;
+  text-align: left;
+  color: inherit;
+}
+.update-head .badge {
+  margin-left: 8px;
+}
+.update-body p {
+  white-space: pre-line;
+  margin: 0 0 8px;
+  max-height: 420px;
+  overflow: auto;
+}
+.update-body {
+  padding-bottom: 12px;
+}
+
+/* Calendar: past days, today, your own dates */
+.cal-day.past {
+  opacity: 0.55;
+}
+.cal-day.today .cal-num {
+  color: var(--accent);
+}
+.cal-day.today .cal-dow::after {
+  content: " · today";
+}
+.cal-game.custom {
+  border: 1px dashed var(--border);
+}
+.cal-game.custom > button {
+  margin-left: auto;
+}
+.cal-pin {
+  display: grid;
+  place-items: center;
+  color: var(--accent-2);
+  font-size: 1.4rem;
+}
+.tag {
+  background: var(--panel-solid);
+  color: var(--muted);
+}
+.tag.wished {
+  background: var(--accent-2);
+  color: var(--accent-text);
+}
+.cal-add {
+  display: grid;
+  gap: 0.6rem;
+  margin: 1rem 0;
+}
+
+/* Wishlist */
+.wishlist .segmented {
+  margin: 0.5rem 0 1rem;
+}
+.wish-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 14px;
+}
+.wish-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  min-width: 0;
+}
+.wish-art {
+  position: relative;
+  display: block;
+  aspect-ratio: 460 / 215;
+  background: var(--bg-2);
+}
+.wish-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.wish-art .tag {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+}
+.wish-blank {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  font-size: 2.4rem;
+  font-weight: 800;
+  color: var(--muted);
+}
+.wish-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px 12px;
+  flex: 1;
+}
+.wish-body strong {
+  overflow-wrap: anywhere;
+}
+.wish-actions {
+  margin-top: auto;
+}
+.badge.source-steam {
+  border-color: var(--accent-2);
+}
+.wish-sources h2 {
+  margin-top: 0.4rem;
+}
+
+/* Import progress */
+.import-meter {
+  margin-top: 6px;
+}
+.import-meter small {
+  color: var(--accent-2);
+  font-weight: 600;
+}
+.meter.busy div {
+  animation: meter-busy 1.2s ease-in-out infinite alternate;
+  opacity: 0.6;
+}
+@keyframes meter-busy {
+  from {
+    opacity: 0.25;
+  }
+  to {
+    opacity: 0.8;
+  }
+}
+
+/* Keep the top bar on one line: links scroll sideways before they wrap. */
+.topbar-right,
+.topbar-right button {
+  white-space: nowrap;
+  flex: none;
+}
+@media (max-width: 1440px) {
+  .me-name {
+    display: none;
+  }
 }

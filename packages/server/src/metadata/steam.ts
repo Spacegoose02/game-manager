@@ -1,4 +1,4 @@
-import type { ControllerSupport } from "@lootden/shared";
+import { PC_PLATFORM, type ControllerSupport, type Platform } from "@lootden/shared";
 import { limitedJson, RateLimiter, type FetchLike } from "./http.js";
 import type { Candidate, MetadataProvider, ProviderResult } from "./types.js";
 
@@ -8,7 +8,7 @@ const limiter = new RateLimiter(1600);
 const FULL_CONTROLLER = 28;
 const PARTIAL_CONTROLLER = 18;
 
-interface AppDetails {
+export interface AppDetails {
   type?: string;
   name: string;
   steam_appid: number;
@@ -20,6 +20,8 @@ interface AppDetails {
   categories?: Array<{ id: number; description: string }>;
   release_date?: { date?: string };
   metacritic?: { score?: number };
+  developers?: string[];
+  movies?: Array<{ name?: string; thumbnail?: string; mp4?: { max?: string; "480"?: string }; webm?: { max?: string; "480"?: string } }>;
 }
 
 export const steamCover = (appId: string) => `https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/library_600x900.jpg`;
@@ -39,7 +41,9 @@ export class SteamProvider implements MetadataProvider {
 
   constructor(private readonly fetchImpl: FetchLike = fetch) {}
 
-  async search(query: string): Promise<Candidate[]> {
+  async search(query: string, platform?: Platform): Promise<Candidate[]> {
+    // The Steam store only sells PC games.
+    if (platform && platform.id !== PC_PLATFORM) return [];
     const r = await limitedJson<{ items?: Array<{ id: number; name: string; type?: string }> }>(
       limiter,
       this.fetchImpl,

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { GameDetail, SaveBackup } from "@lootden/shared";
+import { EMULATORS, platformFor, type GameDetail, type SaveBackup } from "@lootden/shared";
 import { api, formatBytes } from "../api";
 import { useAuth } from "../auth";
 import { bridgeError, desktop, useDesktopGame } from "../desktop";
@@ -46,7 +46,9 @@ export function SavesPanel({ game, onChange }: { game: GameDetail; onChange: (g:
     }
   };
 
-  const canSync = Boolean(desktop?.backupSaves && installed && game.savePath);
+  const emulated = game.platform !== "pc";
+  const emulator = emulated ? EMULATORS.find((e) => e.id === platformFor(game.platform).emulator) : undefined;
+  const canSync = Boolean(desktop?.backupSaves && installed && game.savePath && !emulated);
 
   return (
     <section className="panel saves">
@@ -55,7 +57,13 @@ export function SavesPanel({ game, onChange }: { game: GameDetail; onChange: (g:
         Your save backups follow you between computers. They're private to your profile; the server keeps your last 10 per game.
         {desktop ? " The app backs up automatically every time you close the game." : ""}
       </p>
-      {game.savePath ? (
+      {emulated ? (
+        <p className="small">
+          {emulator?.saveSync
+            ? `Saves and memory cards from ${emulator.name} sync on their own: newer ones come down before you play, and the ones that changed go up when you stop. Playing in the browser uses the same save.`
+            : `${emulator?.name ?? "This emulator"} keeps saves on each PC for now.`}
+        </p>
+      ) : game.savePath ? (
         <p className="small">
           Save folder: <code>{game.savePath}</code>
         </p>
@@ -132,7 +140,7 @@ export function SavesPanel({ game, onChange }: { game: GameDetail; onChange: (g:
       ) : saves ? (
         <p className="muted small">No backups yet.</p>
       ) : null}
-      {isAdmin && <SavePathEditor game={game} onChange={onChange} />}
+      {isAdmin && !emulated && <SavePathEditor game={game} onChange={onChange} />}
     </section>
   );
 }

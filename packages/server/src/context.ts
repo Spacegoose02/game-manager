@@ -11,6 +11,10 @@ import type { UserRepo } from "./users/repo.js";
 import type { Integrations } from "./settings/integrations.js";
 import type { ClientDownloads } from "./clients/store.js";
 import type { SaveStore } from "./saves/store.js";
+import type { BiosStore } from "./emulation/bios.js";
+import type { GameUpdates } from "./news/updates.js";
+import type { FreeGames } from "./news/freegames.js";
+import type { WishlistService } from "./news/wishlist.js";
 import type { ReleaseCalendar } from "./metadata/calendar.js";
 import type { VideoService } from "./news/videos.js";
 
@@ -28,6 +32,10 @@ export interface AppContext {
   integrations: Integrations;
   clients: ClientDownloads;
   saves: SaveStore;
+  bios: BiosStore;
+  updates: GameUpdates;
+  freeGames: FreeGames;
+  wishlist: WishlistService;
   calendar: ReleaseCalendar;
   videos: VideoService;
 }

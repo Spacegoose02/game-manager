@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api, formatBytes, type Connectors, type DownloadRecord, type LiveDownload, type SearchResult } from "../api";
+import { PLATFORMS } from "@lootden/shared";
+import { api, formatBytes, type Connectors, type DownloadRecord, type FolderItem, type ImportProgress, type LiveDownload, type SearchResult } from "../api";
 import { DownloadResults } from "../components/DownloadResults";
 
 const eta = (s: number | null) => (s == null ? "" : s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(1)} h`);
@@ -67,9 +68,11 @@ export function Downloads() {
       {results && (
         <section className="panel">
           <h2>Results</h2>
-          <DownloadResults results={results} onGrab={(r) => act(() => api.grab({ url: r.downloadUrl, title: r.title, protocol: r.protocol }), `Sent "${r.title}" to ${r.protocol === "usenet" ? "SABnzbd" : "qBittorrent"}`)} busy={busy} />
+          <DownloadResults results={results} onGrab={(r, platform) => act(() => api.grab({ url: r.downloadUrl, title: r.title, protocol: r.protocol, platform }), `Sent "${r.title}" to ${r.protocol === "usenet" ? "SABnzbd" : "qBittorrent"}`)} busy={busy} />
         </section>
       )}
+
+      <DownloadsFolder onMessage={setMsg} />
 
       <section className="panel">
         <h2>Queue</h2>
@@ -84,7 +87,9 @@ export function Downloads() {
                   {d.client} · {d.status === "imported" ? `imported to ${d.importedPath}` : d.live ? `${d.live.state}${d.live.downloadSpeed ? ` · ${formatBytes(d.live.downloadSpeed)}/s` : ""}${d.live.etaSeconds ? ` · ${eta(d.live.etaSeconds)} left` : ""}` : d.status}
                 </small>
                 {d.error && <small className="error"> · {d.error}</small>}
-                {d.live && d.status !== "imported" && (
+                {d.progress ? (
+                  <ImportMeter progress={d.progress} />
+                ) : d.live && d.status !== "imported" && (
                   <div className="meter slim">
                     <div style={{ width: `${d.live.progress * 100}%` }} />
                   </div>
@@ -204,6 +209,23 @@ function ConnectorSettings({ onSaved }: { onSaved: (m: string) => void }) {
         </label>
         <p className="muted small">Disc images and installers are kept as folders so you can set them up once from the app.</p>
       </div>
+      <h3>Downloads folder</h3>
+      <div className="inline">
+        <input placeholder="/downloads/complete (as this container sees it)" value={c.import.folder} onChange={(e) => set("import", { folder: e.target.value })} style={{ flex: 1 }} />
+        <label className="check">
+          <input type="checkbox" checked={c.import.autoImportFolder} onChange={(e) => set("import", { autoImportFolder: e.target.checked })} />
+          Import new games from it automatically
+        </label>
+      </div>
+      <p className="muted small">Games already sitting there (from any client, or copied in by hand) are listed on this page to import with the same clean-up. Mount the folder into the container first.</p>
+      <h3>itch.io</h3>
+      <div className="inline">
+        <input type="password" placeholder="itch.io API key" value={c.itch.apiKey} onChange={(e) => set("itch", { apiKey: e.target.value })} style={{ flex: 1 }} />
+        <a className="button" href="https://itch.io/user/settings/api-keys" target="_blank" rel="noreferrer">
+          Get a key
+        </a>
+      </div>
+      <p className="muted small">Lets admins add free itch.io games from Discover, Free games straight into the library.</p>
       <label>
         Path mappings, one per line: <code>client path =&gt; path in this container</code>
         <textarea rows={3} value={mapping} onChange={(e) => setMapping(e.target.value)} placeholder="/data/torrents => /downloads" />
@@ -222,5 +244,121 @@ function ConnectorSettings({ onSaved }: { onSaved: (m: string) => void }) {
         Save
       </button>
     </section>
+  );
+}
+
+/** Games already in the downloads folder: import them with the usual clean-up, or leave them be. */
+function DownloadsFolder({ onMessage }: { onMessage: (m: string) => void }) {
+  const [data, setData] = useState<{ folder: string; items: FolderItem[] } | null>(null);
+  const [platforms, setPlatforms] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const [showDone, setShowDone] = useState(false);
+  const load = () => api.downloadsFolder().then(setData, (e: Error) => setData({ folder: "", items: [] }) ?? onMessage(e.message));
+  useEffect(() => {
+    void load();
+  }, []);
+  const active = !!busy || !!data?.items.some((i) => i.status === "importing");
+  useEffect(() => {
+    if (!active) return;
+    const t = setInterval(() => void api.downloadsFolder().then(setData, () => {}), 1000);
+    return () => clearInterval(t);
+  }, [active]);
+  if (!data?.folder) return null;
+  // ROM files say which system they're for when only one system uses the extension.
+  const guess = (name: string) => {
+    const ext = name.match(/\.(\w+)$/)?.[1]?.toLowerCase();
+    const hits = ext ? PLATFORMS.filter((p) => p.id !== "pc" && p.extensions.includes(ext)) : [];
+    return hits.length === 1 ? hits[0]!.id : "pc";
+  };
+  const items = data.items.filter((i) => showDone || i.status === "new" || i.status === "failed" || i.status === "importing");
+  const run = async (name: string, fn: () => Promise<unknown>, done: string) => {
+    setBusy(name);
+    try {
+      await fn();
+      onMessage(done);
+    } catch (e) {
+      onMessage((e as Error).message);
+    } finally {
+      setBusy(null);
+      await load();
+    }
+  };
+  return (
+    <section className="panel">
+      <div className="inline" style={{ justifyContent: "space-between" }}>
+        <h2>In the downloads folder</h2>
+        <label className="check small">
+          <input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} />
+          Show imported and skipped
+        </label>
+      </div>
+      <p className="muted small">
+        <code>{data.folder}</code>. Import unpacks archives, removes junk and stores the game in the library (or a console's folder).
+      </p>
+      {items.length === 0 ? (
+        <p className="muted">Nothing new.</p>
+      ) : (
+        <ul className="list">
+          {items.map((i) => (
+            <li key={i.name} className="download">
+              <div style={{ flex: 1, minWidth: 240 }}>
+                <strong>{i.name}</strong>
+                <br />
+                <small className="muted">
+                  {formatBytes(i.sizeBytes)} · {new Date(i.modifiedAt).toLocaleString()}
+                  {i.settling ? " · still being written" : ""}
+                  {i.status === "imported" ? ` · imported to ${i.target}` : i.status !== "new" ? ` · ${i.status}` : ""}
+                </small>
+                {i.error && <small className="error"> · {i.error}</small>}
+                {i.progress && <ImportMeter progress={i.progress} />}
+              </div>
+              {i.status !== "imported" && (
+                <span className="inline">
+                  <select value={platforms[i.name] ?? guess(i.name)} onChange={(e) => setPlatforms({ ...platforms, [i.name]: e.target.value })} aria-label="Send to">
+                    {PLATFORMS.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.id === "pc" ? "PC games" : `Emulation: ${p.short}`}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className="primary"
+                    disabled={!!busy || i.settling}
+                    onClick={() => {
+                      const p = platforms[i.name] ?? guess(i.name);
+                      void run(i.name, () => api.importFromFolder(i.name, p === "pc" ? null : p), `Imported ${i.name}`);
+                    }}
+                  >
+                    {busy === i.name ? "Importing…" : "Import"}
+                  </button>
+                  {i.status !== "skipped" && (
+                    <button className="ghost" disabled={!!busy} onClick={() => void run(i.name, () => api.skipFolderItem(i.name), `Skipping ${i.name}`)}>
+                      Skip
+                    </button>
+                  )}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+const STAGES: Record<ImportProgress["stage"], string> = { copying: "Copying", unpacking: "Unpacking", cleaning: "Cleaning up", zipping: "Zipping" };
+
+/** "Unpacking 42%" with a bar; steps that can't measure themselves show a moving bar. */
+function ImportMeter({ progress }: { progress: ImportProgress }) {
+  return (
+    <div className="import-meter">
+      <small>
+        {STAGES[progress.stage]}
+        {progress.percent != null ? ` ${progress.percent}%` : "…"}
+      </small>
+      <div className={`meter slim${progress.percent == null ? " busy" : ""}`}>
+        <div style={{ width: `${progress.percent ?? 100}%` }} />
+      </div>
+    </div>
   );
 }

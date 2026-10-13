@@ -5,6 +5,12 @@ import os from "node:os";
 import path from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, session, shell, type IpcMainInvokeEvent } from "electron";
 import {
+  addBiosFile,
+  biosFromServer,
+  emulatorInfo,
+  emulatorOverview,
+  installEmulator,
+  playEmulated,
   backupSaves,
   expandSavePath,
   findExecutable,
@@ -23,6 +29,9 @@ import {
   type InstallEvent,
 } from "@lootden/client";
 import { SettingsStore } from "./settings.js";
+
+/** Emulators live in the app's data folder unless the user moved them. */
+const toolsDir = () => settings.get().toolsDir || path.join(app.getPath("userData"), "Emulators");
 
 // lootden:// is the current scheme; gamemanager:// still works for links and plugins from before the rename.
 const PROTOCOLS = ["lootden", "gamemanager"];
@@ -203,6 +212,7 @@ function registerIpc(): void {
   ipcMain.handle("gm:play", async (e, gameId: string) => {
     fromServer(e);
     const game = await findInstalled(gameId);
+    if (game.platform && game.platform !== "pc") return playEmulatedGame(gameId, game.dir, game.platform);
     let exe = game.executable ?? (await findExecutable(game.dir, game.title));
     if (!exe) {
       const r = await dialog.showOpenDialog(win!, { title: `Which file starts ${game.title}?`, defaultPath: game.dir, properties: ["openFile"] });
@@ -223,6 +233,89 @@ function registerIpc(): void {
       (err: Error) => send({ gameId, type: "error", message: err.message }),
     );
     return { executable: exe };
+  });
+
+  /** Emulated games: restore newer saves, run the emulator, back up what changed. */
+  async function playEmulatedGame(gameId: string, dir: string, platform: string) {
+    const api = await client();
+    let started: (v: { executable: string }) => void = () => {};
+    const ready = new Promise<{ executable: string }>((resolve) => (started = resolve));
+    const session = playEmulated(api, gameId, dir, platform, {
+      toolsDir: toolsDir(),
+      sevenZip: await sevenZip(),
+      device: os.hostname(),
+      onEvent: (ev) => send({ gameId, type: "prepare", message: ev.message }),
+      onStarted: (plan) => {
+        send({ gameId, type: "playing" });
+        started({ executable: `${plan.emulator.name}: ${path.basename(plan.rom)}` });
+      },
+    });
+    session.then(
+      async (r) => {
+        send({ gameId, type: "stopped", seconds: r.seconds });
+        await api.reportActivity({ gameId, device: os.hostname(), event: "played", seconds: r.seconds });
+        if (r.backup) send({ gameId, type: "saves", backupId: r.backup.id, size: r.backup.size });
+      },
+      (err: Error) => send({ gameId, type: "error", message: err.message }),
+    );
+    // Errors before the emulator starts (missing BIOS, no emulator yet) go straight back to the page.
+    return Promise.race([ready, session.then(() => ({ executable: "" }))]);
+  }
+
+  // ---- Emulators ------------------------------------------------------------------
+
+  ipcMain.handle("gm:emulators", async (e) => {
+    fromServer(e);
+    return { toolsDir: toolsDir(), emulators: await emulatorOverview(toolsDir()) };
+  });
+
+  ipcMain.handle("gm:installEmulator", async (e, id: string) => {
+    fromServer(e);
+    const key = `emu:${id}`;
+    if (running.has(key)) throw new Error("Already downloading");
+    const controller = new AbortController();
+    running.set(key, controller);
+    let last = 0;
+    try {
+      return await installEmulator(id, {
+        toolsDir: toolsDir(),
+        sevenZip: await sevenZip(),
+        signal: controller.signal,
+        onEvent: (ev) => {
+          const now = Date.now();
+          if (ev.total && now - last < 300) return;
+          last = now;
+          send({ gameId: key, type: "prepare", message: ev.total ? `${ev.message} (${Math.floor(((ev.received ?? 0) / ev.total) * 100)}%)` : ev.message });
+        },
+      });
+    } finally {
+      running.delete(key);
+    }
+  });
+
+  ipcMain.handle("gm:addBios", async (e, id: string) => {
+    fromServer(e);
+    const info = emulatorInfo(id);
+    if (!info) throw new Error("Unknown emulator");
+    const r = await dialog.showOpenDialog(win!, {
+      title: `BIOS or firmware for ${info.name}`,
+      properties: ["openFile", "multiSelections"],
+      filters: [{ name: "BIOS and firmware", extensions: ["bin", "rom0", "pup", "qcow2", "BIN", "PUP"] }, { name: "All files", extensions: ["*"] }],
+    });
+    if (r.canceled) return [];
+    const added: string[] = [];
+    for (const f of r.filePaths) added.push((await addBiosFile(toolsDir(), info, f)).label);
+    return added;
+  });
+
+  ipcMain.handle("gm:biosFromServer", async (e) => {
+    fromServer(e);
+    return biosFromServer(await client(), toolsDir());
+  });
+
+  ipcMain.handle("gm:openTools", async (e) => {
+    fromServer(e);
+    await shell.openPath(toolsDir());
   });
 
   ipcMain.handle("gm:backupSaves", async (e, gameId: string) => {

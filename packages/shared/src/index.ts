@@ -1,6 +1,9 @@
 // Types and helpers shared by the server and the client.
 // Keep this package dependency-free so both sides can import it anywhere.
 
+export * from "./emulators.js";
+export * from "./platforms.js";
+
 export const API_VERSION = 1;
 
 export type ArchiveKind = "zip" | "7z" | "rar";
@@ -30,10 +33,12 @@ export interface GameSummary {
   /** Stable id derived from the game's path in the library. */
   id: string;
   title: string;
-  /** Top-level folder or file name in the library. */
+  /** Folder or file name in the library, relative to the games folder ("Emulation/ps1/Game" for emulated games). */
   source: string;
-  /** "folder" = a directory of files; "archive" = a single archive file at the library root. */
-  layout: "folder" | "archive";
+  /** "folder" = a directory of files; "archive" = a single archive file; "file" = a single ROM or disc image. */
+  layout: "folder" | "archive" | "file";
+  /** "pc", or the emulated system from Emulation/<platform>/. See PLATFORMS. */
+  platform: string;
   sizeBytes: number;
   fileCount: number;
   /** True when at least one file needs unpacking after download. */
@@ -275,4 +280,21 @@ export interface GameListing {
   url: string | null;
   /** The library game with the same title, when there is one. */
   libraryId: string | null;
+  /** On the household wishlist. */
+  wishlisted?: boolean;
+  /** Calendar entries people added themselves: their note, and whether this viewer may delete it. */
+  note?: string | null;
+  canDelete?: boolean;
+}
+
+/** Everything the Discover game page shows about a game that may not be in the library. */
+export interface GameInfo extends GameListing {
+  summary: string | null;
+  screenshots: string[];
+  /** A YouTube video id, or a direct video file from the store. */
+  trailer: { youtubeId: string } | { url: string; poster: string | null } | null;
+  /** 0-100 critic/user rating when known. */
+  rating: number | null;
+  developers: string[];
+  ageRatings: AgeRating[];
 }

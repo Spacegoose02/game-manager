@@ -10,6 +10,17 @@ import { installGame, pickGame, type InstallEvent } from "./installer.js";
 import { findSevenZip } from "./extractor.js";
 import { findExecutable, launchAndTrack, saveExecutable } from "./launcher.js";
 import { backupSaves, expandSavePath, restoreSaves } from "./saves.js";
+import { biosFromServer, emulatorOverview, EMULATORS, installEmulator, playEmulated } from "./emulators.js";
+import { configDir } from "./config.js";
+
+/** Emulators, BIOS files and their saves for the command-line client. */
+const toolsDir = () => process.env.GM_TOOLS_DIR || path.join(configDir(), "emulators");
+
+async function needSevenZip(configured: string) {
+  const s = await findSevenZip(configured);
+  if (!s) throw new Error("7-Zip is needed for this; install it or set sevenZipPath");
+  return s;
+}
 
 const HELP = `LootDen client
 
@@ -23,6 +34,9 @@ Usage:
       --keep-archives                Keep zip/7z/rar files after unpacking
   gm installed                       Games installed on this computer
   gm play <game>                     Launch an installed game and record play time
+  gm emulators                       Show emulators, versions and missing BIOS files
+  gm emulators install <id>          Download an emulator from its official releases
+  gm bios pull                       Copy the server's BIOS files into the emulators
   gm saves <game>                    List your save backups on the server
   gm backup <game>                   Upload this PC's saves for an installed game
   gm restore <game> [--id N]         Restore your newest (or chosen) save backup
@@ -178,6 +192,13 @@ async function main(argv: string[]): Promise<void> {
       const q = positional.join(" ").toLowerCase();
       const game = installed.find((g) => g.gameId === q || g.title.toLowerCase() === q) ?? installed.find((g) => g.title.toLowerCase().includes(q));
       if (!game) throw new Error(`"${positional.join(" ")}" is not installed under ${config.installDir}`);
+      if (game.platform !== "pc") {
+        console.log(`Starting ${game.title}`);
+        const r = await playEmulated(api, game.gameId, game.dir, game.platform, { toolsDir: toolsDir(), sevenZip: await needSevenZip(config.sevenZipPath), device: os.hostname(), onEvent: (e) => console.log(e.message) });
+        await api.reportActivity({ gameId: game.gameId, device: os.hostname(), event: "played", seconds: r.seconds });
+        console.log(`Played for ${Math.round(r.seconds / 60)} min${r.backup ? "; saves backed up" : ""}`);
+        return;
+      }
       const exe = typeof flags.exe === "string" ? flags.exe : game.executable ?? (await findExecutable(game.dir, game.title));
       if (!exe) throw new Error(`No executable found in ${game.dir}; pass --exe <relative path>`);
       if (exe !== game.executable) await saveExecutable(game.dir, exe);
@@ -185,6 +206,28 @@ async function main(argv: string[]): Promise<void> {
       const seconds = await launchAndTrack(game.dir, exe);
       await api.reportActivity({ gameId: game.gameId, device: os.hostname(), event: "played", seconds });
       console.log(`Played for ${Math.round(seconds / 60)} min`);
+      return;
+    }
+    case "emulators": {
+      if (positional[0] === "install") {
+        const id = positional[1] ?? "";
+        const r = await installEmulator(id, { toolsDir: toolsDir(), sevenZip: await needSevenZip(config.sevenZipPath), onEvent: (e) => !e.total && console.log(e.message) });
+        console.log(`Installed ${r.exe}`);
+        return;
+      }
+      for (const e of await emulatorOverview(toolsDir())) {
+        const info = EMULATORS.find((x) => x.id === e.id)!;
+        const missing = info.bios.filter((b) => b.required && !e.bios.find((x) => x.id === b.id)?.present).map((b) => b.label);
+        console.log(`${e.id.padEnd(12)} ${e.installed ? `v${e.installed.version}` : "not set up"}${missing.length ? `  needs: ${missing.join(", ")}` : ""}`);
+      }
+      console.log(`Emulators live in ${toolsDir()}`);
+      return;
+    }
+    case "bios": {
+      if (positional[0] !== "pull") throw new Error("Usage: gm bios pull");
+      const r = await biosFromServer(api, toolsDir());
+      console.log(r.added.length ? `Added ${r.added.join(", ")}` : "No BIOS files to add");
+      if (r.skipped.length) console.log(`Skipped (set up their emulator first): ${r.skipped.join(", ")}`);
       return;
     }
     case "saves":

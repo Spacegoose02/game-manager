@@ -12,7 +12,16 @@ export interface ConnectorSettings {
     pathMappings: Array<{ from: string; to: string }>;
     /** Clean-up applied while importing: junk removal, unpacking, renaming and re-zipping. */
     tidy: TidyOptions;
+    /**
+     * A folder (as this container sees it) where finished downloads land, including ones the
+     * clients here don't know about. Its games can be imported from the Downloads page.
+     */
+    folder: string;
+    /** Import new games from that folder on their own once they stop changing. */
+    autoImportFolder: boolean;
   };
+  /** itch.io API key, so free itch.io games can be added to the library in one click. */
+  itch: { apiKey: string };
 }
 
 export const DEFAULT_CONNECTORS: ConnectorSettings = {
@@ -20,7 +29,8 @@ export const DEFAULT_CONNECTORS: ConnectorSettings = {
   sabnzbd: { url: "", apiKey: "", category: "games" },
   // 4000 = PC games in the Newznab/Torznab category tree that Prowlarr uses.
   prowlarr: { url: "", apiKey: "", categories: [4000] },
-  import: { mode: "copy", pathMappings: [], tidy: DEFAULT_TIDY },
+  import: { mode: "copy", pathMappings: [], tidy: DEFAULT_TIDY, folder: "", autoImportFolder: false },
+  itch: { apiKey: "" },
 };
 
 const KEY = "connectors";
@@ -34,6 +44,7 @@ export function loadConnectorSettings(db: Db): ConnectorSettings {
     sabnzbd: { ...DEFAULT_CONNECTORS.sabnzbd, ...stored.sabnzbd },
     prowlarr: { ...DEFAULT_CONNECTORS.prowlarr, ...stored.prowlarr },
     import: { ...DEFAULT_CONNECTORS.import, ...stored.import, tidy: { ...DEFAULT_TIDY, ...stored.import?.tidy } },
+    itch: { ...DEFAULT_CONNECTORS.itch, ...stored.itch },
   };
 }
 
@@ -45,7 +56,11 @@ export function saveConnectorSettings(db: Db, incoming: Partial<ConnectorSetting
     sabnzbd: { ...current.sabnzbd, ...incoming.sabnzbd },
     prowlarr: { ...current.prowlarr, ...incoming.prowlarr },
     import: { ...current.import, ...incoming.import, tidy: { ...current.import.tidy, ...incoming.import?.tidy } },
+    itch: { ...current.itch, ...incoming.itch },
   };
+  if (merged.itch.apiKey === SECRET) merged.itch.apiKey = current.itch.apiKey;
+  merged.import.folder = String(merged.import.folder ?? "").trim();
+  merged.import.autoImportFolder = Boolean(merged.import.autoImportFolder);
   if (!["zip", "folder"].includes(merged.import.tidy.repack)) throw new Error("Unknown repack option; use zip or folder");
   if (merged.qbittorrent.password === SECRET) merged.qbittorrent.password = current.qbittorrent.password;
   if (merged.sabnzbd.apiKey === SECRET) merged.sabnzbd.apiKey = current.sabnzbd.apiKey;
@@ -63,5 +78,6 @@ export function maskedConnectorSettings(s: ConnectorSettings): ConnectorSettings
     qbittorrent: { ...s.qbittorrent, password: s.qbittorrent.password ? SECRET : "" },
     sabnzbd: { ...s.sabnzbd, apiKey: s.sabnzbd.apiKey ? SECRET : "" },
     prowlarr: { ...s.prowlarr, apiKey: s.prowlarr.apiKey ? SECRET : "" },
+    itch: { apiKey: s.itch.apiKey ? SECRET : "" },
   };
 }

@@ -1,4 +1,4 @@
-import type { AgeRating, ControllerSupport } from "@lootden/shared";
+import type { AgeRating, ControllerSupport, Platform } from "@lootden/shared";
 
 export interface Candidate {
   provider: string;
@@ -28,6 +28,7 @@ export interface ProviderResult {
 export interface MetadataProvider {
   readonly name: string;
   readonly enabled: boolean;
-  search(query: string): Promise<Candidate[]>;
+  /** platform narrows the search to one system (emulated games); unset means PC. */
+  search(query: string, platform?: Platform): Promise<Candidate[]>;
   fetch(id: string): Promise<ProviderResult | null>;
 }

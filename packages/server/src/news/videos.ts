@@ -29,7 +29,7 @@ export interface Video {
 const SETTINGS_KEY = "video_groups";
 const CHANNEL_ID = /^UC[\w-]{22}$/;
 
-/** Used until an admin edits the groups: official trailer channels. */
+/** Used until an admin edits the groups: official trailer channels, plus reviews and walkthroughs. */
 export const DEFAULT_GROUPS: VideoGroup[] = [
   {
     id: "trailers",
@@ -39,6 +39,16 @@ export const DEFAULT_GROUPS: VideoGroup[] = [
       { id: "UCKy1dAqELo0zrOtPkf0eTMw", name: "IGN" },
       { id: "UCjBp_7RuDBUYbd1LegWEJ8g", name: "Xbox" },
       { id: "UC-2Y8dQb0S6DtpxNgAKoJKA", name: "PlayStation" },
+    ],
+  },
+  {
+    id: "reviews",
+    title: "Reviews and Guides",
+    intervalMinutes: 120,
+    channels: [
+      { id: "UCbu2SsF-Or3Rsn3NxqODImw", name: "GameSpot" },
+      { id: "UCZ7AeeVbyslLM_8-nVy2B8Q", name: "Skill Up" },
+      { id: "UCWBA1-H9A5IldSb3tNwQmtQ", name: "PowerPyx" },
     ],
   },
 ];
@@ -82,7 +92,18 @@ export class VideoService {
 
   groups(): VideoGroup[] {
     const row = this.db.prepare("SELECT value FROM settings WHERE key = ?").get(SETTINGS_KEY) as { value: string } | undefined;
-    return row ? json<VideoGroup[]>(row.value, []) : DEFAULT_GROUPS;
+    if (!row) return DEFAULT_GROUPS;
+    const saved = json<VideoGroup[]>(row.value, []);
+    // Rows saved before "Reviews and Guides" existed get it once; deleting it afterwards sticks.
+    const offered = this.db.prepare("SELECT value FROM settings WHERE key = 'video_reviews_offered'").get();
+    if (!offered) {
+      this.db.prepare("INSERT INTO settings (key, value) VALUES ('video_reviews_offered', '1') ON CONFLICT(key) DO NOTHING").run();
+      if (!saved.some((g) => g.id === "reviews")) {
+        saved.push(DEFAULT_GROUPS.find((g) => g.id === "reviews")!);
+        this.db.prepare("UPDATE settings SET value = ? WHERE key = ?").run(JSON.stringify(saved), SETTINGS_KEY);
+      }
+    }
+    return saved;
   }
 
   /**

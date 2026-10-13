@@ -13,6 +13,14 @@ export interface InstalledGame {
   dir: string;
   installedAt: string;
   executable?: string;
+  /** Missing in apps older than emulation support. */
+  platform?: string;
+}
+
+export interface EmulatorSetup {
+  id: string;
+  installed: { version: string; exe: string; installedAt: string; cores?: string[] } | null;
+  bios: Array<{ id: string; present: string | null }>;
 }
 
 export type Progress =
@@ -48,6 +56,12 @@ export interface DesktopBridge {
   /** Missing in desktop apps older than save sync. */
   backupSaves?(gameId: string): Promise<{ backupId: number; size: number } | { error: string }>;
   restoreSaves?(gameId: string, saveId: number): Promise<{ previous: string | null } | null>;
+  /** Emulators: missing in apps older than emulation support. */
+  emulators?(): Promise<{ toolsDir: string; emulators: EmulatorSetup[] }>;
+  installEmulator?(id: string): Promise<{ version: string }>;
+  addBios?(id: string): Promise<string[]>;
+  biosFromServer?(): Promise<{ added: string[]; skipped: string[] }>;
+  openTools?(): Promise<void>;
   changeServer(): Promise<void>;
   toggleFullscreen(): Promise<boolean>;
   onProgress(cb: (p: Progress) => void): () => void;

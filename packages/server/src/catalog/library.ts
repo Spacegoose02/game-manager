@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, rename, statfs } from "node:fs/promises";
 import path from "node:path";
-import type { ControllerSupport, GameDetail, GameMetadata, GameSummary, LibraryStats } from "@lootden/shared";
+import { PC_PLATFORM, PLATFORMS, type ControllerSupport, type GameDetail, type GameMetadata, type GameSummary, type LibraryStats } from "@lootden/shared";
 import { json, now, type Db } from "../db/database.js";
 import { kidSafeFromRatings } from "../metadata/ratings.js";
 import { gameIdFor, scanLibrary, type ScannedGame } from "./scanner.js";
@@ -13,6 +13,8 @@ export interface GameQuery {
   kidSafe?: boolean;
   /** Only games no metadata provider has matched yet (admin clean-up list). */
   missingMetadata?: boolean;
+  /** "pc", "emulated" (every other system) or one platform id. Unset means everything. */
+  platform?: string;
   sort?: "title" | "added" | "release" | "rating" | "size";
   order?: "asc" | "desc";
   limit?: number;
@@ -151,11 +153,12 @@ export class Library {
     const metadata = metaRow ? metadataFromRow(metaRow) : null;
     const kidSafe =
       row?.kid_safe_override != null ? row.kid_safe_override === 1 : metadata ? kidSafeFromRatings(metadata.ageRatings) : null;
-    const { files, ...base } = g;
+    const { files, entryModifiedAt, ...base } = g;
     return {
       ...base,
       title: row?.title_override || metadata?.name || g.title,
-      addedAt: row?.added_at ?? new Date(0).toISOString(),
+      // "Recently added" follows the folder's Date modified, like sorting the games folder in Explorer.
+      addedAt: entryModifiedAt ?? row?.added_at ?? new Date(0).toISOString(),
       coverUrl: imageUrl(g.id, "cover", row?.cover_override ?? metadata?.coverUrl ?? (metadata?.steamAppId ? "steam" : null)),
       backgroundUrl: imageUrl(g.id, "background", row?.background_override ?? metadata?.screenshots[0] ?? (metadata?.steamAppId ? "steam" : null)),
       genres: metadata?.genres ?? [],
@@ -194,6 +197,7 @@ export class Library {
     for (const g of this.scanned.values()) {
       const { files: _f, metadata: _m, overrides: _o, backgroundUrl: _b, savePath: _s, ...summary } = this.view(g, games.get(g.id), meta.get(g.id));
       if (q && !summary.title.toLowerCase().includes(q) && !summary.source.toLowerCase().includes(q)) continue;
+      if (query.platform === "emulated" ? summary.platform === PC_PLATFORM : query.platform && summary.platform !== query.platform) continue;
       if (genre && !summary.genres.some((x) => x.toLowerCase() === genre)) continue;
       if (query.kidSafe && summary.kidSafe !== true) continue;
       if (query.missingMetadata && meta.has(g.id)) continue;
@@ -216,10 +220,23 @@ export class Library {
     return out;
   }
 
+  /** Systems in the library with game counts, PC first, for the Emulation section. */
+  platforms(kidSafeOnly = false): Array<{ id: string; count: number; sizeBytes: number }> {
+    const counts = new Map<string, { id: string; count: number; sizeBytes: number }>();
+    for (const g of this.list({ kidSafe: kidSafeOnly })) {
+      const c = counts.get(g.platform) ?? { id: g.platform, count: 0, sizeBytes: 0 };
+      c.count++;
+      c.sizeBytes += g.sizeBytes;
+      counts.set(g.platform, c);
+    }
+    const order = (id: string) => (id === PC_PLATFORM ? -1 : PLATFORMS.findIndex((x) => x.id === id) >>> 0);
+    return [...counts.values()].sort((a, b) => order(a.id) - order(b.id) || a.id.localeCompare(b.id));
+  }
+
   /** Distinct genres with counts, for filter menus. */
-  genres(kidSafeOnly = false): Array<{ name: string; count: number }> {
+  genres(kidSafeOnly = false, platform?: string): Array<{ name: string; count: number }> {
     const counts = new Map<string, number>();
-    for (const g of this.list({ kidSafe: kidSafeOnly })) for (const name of g.genres) counts.set(name, (counts.get(name) ?? 0) + 1);
+    for (const g of this.list({ kidSafe: kidSafeOnly, platform })) for (const name of g.genres) counts.set(name, (counts.get(name) ?? 0) + 1);
     return [...counts].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
   }
 

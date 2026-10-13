@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import type { GameSummary } from "@lootden/shared";
 import { Badges } from "./Badges";
@@ -19,9 +20,10 @@ export function GameCard({ game }: { game: GameSummary }) {
   );
 }
 
-export function GameGrid({ games }: { games: GameSummary[] }) {
+/** aspect: box art shape (width / height) for a console's shelf; PC covers are 3:4. */
+export function GameGrid({ games, aspect }: { games: GameSummary[]; aspect?: number }) {
   return (
-    <div className="grid">
+    <div className={`grid${aspect ? " grid-shaped" : ""}`} style={aspect ? ({ "--cover-aspect": String(aspect) } as CSSProperties) : undefined}>
       {games.map((g) => (
         <GameCard key={g.id} game={g} />
       ))}

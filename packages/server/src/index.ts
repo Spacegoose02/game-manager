@@ -38,6 +38,9 @@ if (config.watch) {
 if (config.scanIntervalMinutes > 0) setInterval(rescan, config.scanIntervalMinutes * 60_000).unref();
 setInterval(() => ctx.auth.pruneSessions(), 6 * 3600_000).unref();
 // Import finished torrent/usenet downloads into the library.
+// Steam wishlist and list feeds: every six hours, and once shortly after startup.
+setTimeout(() => void ctx.wishlist.syncAll().catch(() => {}), 30_000).unref();
+setInterval(() => void ctx.wishlist.syncAll().catch(() => {}), 6 * 3600_000).unref();
 setInterval(() => ctx.downloads.reconcile().catch((err) => app.log.warn(err, "Download import failed")), 60_000).unref();
 
 const shutdown = async () => {

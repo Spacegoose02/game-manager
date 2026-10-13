@@ -26,11 +26,18 @@ import { settingsRoutes } from "./routes/settings.js";
 import { clientRoutes } from "./routes/clients.js";
 import { saveRoutes } from "./routes/saves.js";
 import { discoverRoutes } from "./routes/discover.js";
+import { wishlistRoutes } from "./routes/wishlist.js";
+import { WishlistService } from "./news/wishlist.js";
 import { ReleaseCalendar } from "./metadata/calendar.js";
 import { VideoService } from "./news/videos.js";
 import { SaveStore } from "./saves/store.js";
+import { BiosStore } from "./emulation/bios.js";
+import { GameUpdates } from "./news/updates.js";
+import { FreeGames } from "./news/freegames.js";
+import { loadConnectorSettings } from "./connectors/settings.js";
+import { emulationRoutes } from "./routes/emulation.js";
 
-export const VERSION = "0.4.0";
+export const VERSION = "0.5.0";
 
 /** Routes reachable without signing in. */
 const PUBLIC = [/^\/api\/health$/, /^\/api\/auth\//, /^\/api\/avatars\//];
@@ -58,10 +65,14 @@ export function buildContext(config: ServerConfig, db: Db, log: Log, opts: Build
     integrations,
     clients: new ClientDownloads(config.dataDir, opts.fetchImpl),
     saves: new SaveStore(db, config.dataDir),
+    bios: new BiosStore(db, config.dataDir),
+    updates: new GameUpdates(opts.fetchImpl),
+    freeGames: new FreeGames(opts.fetchImpl, () => loadConnectorSettings(db).itch.apiKey),
     auth: new AuthService(db, users, config),
     oidc: new OidcService(config, users),
     metadata,
     calendar: new ReleaseCalendar(metadata, library, opts.fetchImpl),
+    wishlist: new WishlistService(db, library, opts.fetchImpl),
     videos: new VideoService(db, opts.fetchImpl),
     news: new NewsService(db, opts.fetchImpl),
     downloads: new DownloadManager(db, library, log, opts.fetchImpl),
@@ -118,12 +129,14 @@ export function buildApp(config: ServerConfig, db: Db, opts: BuildOptions = {}):
   authRoutes(app, ctx);
   userRoutes(app, ctx);
   gameRoutes(app, ctx);
+  emulationRoutes(app, ctx);
   newsRoutes(app, ctx);
   downloadRoutes(app, ctx);
   settingsRoutes(app, ctx);
   clientRoutes(app, ctx);
   saveRoutes(app, ctx);
   discoverRoutes(app, ctx);
+  wishlistRoutes(app, ctx);
 
   const webDir = opts.webDir;
   if (webDir && existsSync(path.join(webDir, "index.html"))) {

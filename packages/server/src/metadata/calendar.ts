@@ -1,4 +1,5 @@
-import type { GameListing } from "@lootden/shared";
+import type { GameInfo, GameListing } from "@lootden/shared";
+import { gameInfo } from "./details.js";
 import type { Library } from "../catalog/library.js";
 import { limitedJson, RateLimiter, type FetchLike } from "./http.js";
 import { igdbImage } from "./igdb.js";
@@ -62,6 +63,7 @@ const decode = (s: string) => s.replace(/&amp;/g, "&").replace(/&#39;|&apos;/g, 
  */
 export class ReleaseCalendar {
   private cache = new Map<string, { at: number; items: GameListing[]; source: string }>();
+  private infoCache = new Map<string, { at: number; info: GameInfo | null }>();
 
   constructor(
     private readonly metadata: MetadataService,
@@ -72,6 +74,7 @@ export class ReleaseCalendar {
   /** Drops cached lists, e.g. after API keys change. */
   reset(): void {
     this.cache.clear();
+    this.infoCache.clear();
   }
 
   private async cached(key: string, load: () => Promise<{ items: GameListing[]; source: string }>) {
@@ -89,11 +92,20 @@ export class ReleaseCalendar {
     return items.map((i) => ({ ...i, libraryId: byTitle.get(titleKey(i.name)) ?? null }));
   }
 
-  /** Releases from today through the next `days` days, soonest first. */
-  upcoming(days = 120, platform: "pc" | "all" = "pc") {
-    return this.cached(`upcoming:${days}:${platform}`, async () => {
-      const from = new Date();
-      const to = new Date(Date.now() + days * 86400_000);
+  /** Releases from `pastDays` ago through the next `days` days, soonest first. */
+  async upcoming(days = 120, platform: "pc" | "all" = "pc", pastDays = 0) {
+    const next = await this.between(0, days, platform);
+    if (pastDays <= 0) return next;
+    const past = await this.between(-pastDays, 0, platform);
+    const seen = new Set(next.items.map((i) => `${i.provider}:${i.providerId}`));
+    return { ...next, items: [...past.items.filter((i) => !seen.has(`${i.provider}:${i.providerId}`)), ...next.items] };
+  }
+
+  /** Releases between two day offsets from today (negative is the past). */
+  private between(fromDay: number, toDay: number, platform: "pc" | "all") {
+    return this.cached(`between:${fromDay}:${toDay}:${platform}`, async () => {
+      const from = new Date(Date.now() + fromDay * 86400_000);
+      const to = new Date(Date.now() + toDay * 86400_000);
       const { igdb, rawg } = this.metadata;
       if (igdb.enabled) {
         const where = [
@@ -119,26 +131,55 @@ export class ReleaseCalendar {
         }
         return { source: "RAWG", items };
       }
-      return { source: "Steam", items: await this.steamSearch("comingsoon") };
+      // Steam has no date search: "coming soon" for the future, "popular new" for the past.
+      if (fromDay >= 0) return { source: "Steam", items: await this.steamSearch("comingsoon") };
+      const since = day(from);
+      return { source: "Steam", items: (await this.steamSearch("popularnew")).filter((i) => i.releaseDate && i.releaseDate >= since) };
     });
   }
 
-  /** Recently released games people are playing, for Discover. */
-  trending() {
-    return this.cached("trending", async () => {
-      const { rawg } = this.metadata;
+  /** Games released in the last few months that people are playing, newest and most popular first. */
+  recent(days = 90) {
+    return this.cached(`recent:${days}`, async () => {
+      const to = new Date();
+      const from = new Date(Date.now() - days * 86400_000);
+      const { igdb, rawg } = this.metadata;
+      if (igdb.enabled) {
+        const where = [
+          `first_release_date >= ${Math.floor(from.getTime() / 1000)}`,
+          `first_release_date <= ${Math.floor(to.getTime() / 1000)}`,
+          "version_parent = null",
+          "themes != (42)",
+          "platforms = (6)",
+          "(hypes >= 1 | total_rating_count >= 1)",
+        ].join(" & ");
+        const rows = await igdb.raw<IgdbRelease>(
+          "games",
+          `fields name,first_release_date,cover.image_id,artworks.image_id,screenshots.image_id,platforms.abbreviation,platforms.name,genres.name,url; where ${where}; sort first_release_date desc; limit 60;`,
+        );
+        return { source: "IGDB", items: rows.map(fromIgdb) };
+      }
       if (rawg.enabled) {
-        const to = new Date();
-        const from = new Date(Date.now() - 120 * 86400_000);
         const r = await rawg.list({ dates: `${day(from)},${day(to)}`, ordering: "-added", page_size: "40", platforms: "4" });
         return { source: "RAWG", items: r.results.map(fromRawg) };
       }
-      return { source: "Steam", items: await this.steamSearch("topsellers") };
+      return { source: "Steam", items: await this.steamSearch("popularnew") };
     });
   }
 
-  private async steamSearch(filter: "comingsoon" | "topsellers"): Promise<GameListing[]> {
-    const params = new URLSearchParams({ filter, category1: "998", count: "60", start: "0", infinite: "1", cc: "us", l: "english" });
+  /** Full details for the Discover game page, cached like the lists. */
+  async info(provider: string, id: string): Promise<GameInfo | null> {
+    const key = `info:${provider}:${id}`;
+    const hit = this.infoCache.get(key);
+    const fresh = hit && Date.now() - hit.at < CACHE_MS ? hit.info : await gameInfo(this.metadata, provider, id);
+    if (!hit || hit.info !== fresh) this.infoCache.set(key, { at: Date.now(), info: fresh });
+    if (!fresh) return null;
+    const [marked] = this.markLibrary([fresh]);
+    return { ...fresh, libraryId: marked!.libraryId };
+  }
+
+  private async steamSearch(filter: "comingsoon" | "popularnew"): Promise<GameListing[]> {
+    const params = new URLSearchParams({ filter, category1: "998", count: filter === "popularnew" ? "100" : "60", start: "0", infinite: "1", cc: "us", l: "english" });
     const r = await limitedJson<{ results_html?: string }>(steamLimiter, this.fetchImpl, `https://store.steampowered.com/search/results/?${params}`);
     const rows = parseSteamSearch(r.results_html ?? "");
     const items = rows.map((x) => {
@@ -158,6 +199,12 @@ export class ReleaseCalendar {
       };
     });
     if (filter === "comingsoon") items.sort((a, b) => (a.releaseDate ?? "9999").localeCompare(b.releaseDate ?? "9999"));
+    // "Popular new" also lists evergreen hits (Dota 2, CS2); keep the ones released lately, in popularity order.
+    if (filter === "popularnew") {
+      const since = day(new Date(Date.now() - 120 * 86400_000));
+      const today = day(new Date());
+      return items.filter((i) => i.releaseDate && i.releaseDate >= since && i.releaseDate <= today);
+    }
     return items;
   }
 }

@@ -131,6 +131,62 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX saves_user_game ON saves(user_id, game_id, created_at);
   `,
+  `
+  -- Downloads meant for the Emulation shelf go to Emulation/<platform>/ instead of the PC games.
+  ALTER TABLE downloads ADD COLUMN platform TEXT;
+  -- BIOS and firmware files admins upload once for every player's emulators.
+  CREATE TABLE bios_files (
+    name TEXT PRIMARY KEY,
+    emulator TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    sha1 TEXT NOT NULL,
+    uploaded_at TEXT NOT NULL
+  );
+  `,
+  `
+  -- Games found in the downloads folder and imported (or tried) from there.
+  CREATE TABLE folder_imports (
+    name TEXT PRIMARY KEY,
+    status TEXT NOT NULL,
+    target TEXT,
+    error TEXT,
+    at TEXT NOT NULL
+  );
+  `,
+  `
+  -- The household wishlist: synced from Steam, filled by RSS list feeds or added by hand.
+  CREATE TABLE wishlist (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    title_key TEXT NOT NULL UNIQUE,
+    steam_app_id INTEGER,
+    url TEXT,
+    image TEXT,
+    release_date TEXT,
+    date_text TEXT,
+    sources TEXT NOT NULL DEFAULT '[]',
+    added_at TEXT NOT NULL,
+    hidden INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE TABLE wishlist_feeds (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    url TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    checked_at TEXT,
+    error TEXT,
+    item_count INTEGER NOT NULL DEFAULT 0
+  );
+  -- Dates people add to the release calendar themselves.
+  CREATE TABLE calendar_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    date TEXT NOT NULL,
+    note TEXT,
+    url TEXT,
+    created_by INTEGER,
+    created_at TEXT NOT NULL
+  );
+  `,
 ];
 
 export function openDatabase(file: string): Db {

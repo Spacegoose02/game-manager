@@ -18,7 +18,7 @@ export class GameServerClient {
     return this.config.apiToken ? { Authorization: `Bearer ${this.config.apiToken}`, ...extra } : extra;
   }
 
-  private async json<T>(pathname: string, init: RequestInit = {}): Promise<T> {
+  async json<T>(pathname: string, init: RequestInit = {}): Promise<T> {
     const res = await fetch(this.base + pathname, { ...init, headers: this.headers() });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
@@ -93,6 +93,12 @@ export class GameServerClient {
     } as RequestInit);
     if (!res.ok) throw new ApiError(`Uploading the installed game failed with ${res.status}: ${await res.text().catch(() => "")}`, res.status);
     return (await res.json()) as GameDetail;
+  }
+  /** Raw bytes of a server file (BIOS files for the emulators). */
+  async download(pathname: string): Promise<Uint8Array> {
+    const res = await fetch(this.base + pathname, { headers: this.headers() });
+    if (!res.ok) throw new ApiError(`GET ${pathname} failed with ${res.status}`, res.status);
+    return new Uint8Array(await res.arrayBuffer());
   }
   fileUrl(gameId: string, index: number): string {
     return `${this.base}/api/games/${encodeURIComponent(gameId)}/files/${index}`;

@@ -1,7 +1,11 @@
 import type {
   ApiTokenInfo,
   AuthProviders,
+  EmulatorInfo,
+  Platform,
+  ServerBiosFile,
   GameDetail,
+  GameInfo,
   GameListing,
   GameSummary,
   LibraryStats,
@@ -61,12 +65,21 @@ export interface NewsItem {
   image: string | null;
 }
 
+export interface EmulationOverview {
+  platforms: Platform[];
+  emulators: EmulatorInfo[];
+  /** Systems in the library with game counts. */
+  library: Array<{ id: string; count: number; sizeBytes: number }>;
+  bios: ServerBiosFile[];
+}
+
 export interface GameFilters {
   search?: string;
   genre?: string;
   controller?: string;
   kidSafe?: boolean;
   missingMetadata?: boolean;
+  platform?: string;
   sort?: string;
   order?: string;
 }
@@ -86,7 +99,41 @@ export interface Connectors {
     mode: "copy" | "move" | "off";
     pathMappings: Array<{ from: string; to: string }>;
     tidy: { stripJunk: boolean; extract: boolean; repack: "zip" | "folder" };
+    folder: string;
+    autoImportFolder: boolean;
   };
+  itch: { apiKey: string };
+}
+
+export interface FolderItem {
+  name: string;
+  sizeBytes: number;
+  modifiedAt: string;
+  settling: boolean;
+  status: "new" | "importing" | "imported" | "failed" | "skipped";
+  target: string | null;
+  error: string | null;
+  progress: ImportProgress | null;
+}
+
+export interface FreeGame {
+  store: "epic" | "steam" | "gog" | "itch" | "prime";
+  title: string;
+  url: string;
+  image: string | null;
+  endsAt: string | null;
+  startsAt: string | null;
+  upcoming: boolean;
+  kind: "giveaway" | "free";
+  canAdd: boolean;
+}
+
+export interface GameUpdate {
+  title: string;
+  date: string;
+  url: string;
+  body: string;
+  patchNotes: boolean;
 }
 
 export interface SearchResult {
@@ -123,6 +170,39 @@ export interface DownloadRecord {
   importedPath: string | null;
   error: string | null;
   live: LiveDownload | null;
+  progress?: ImportProgress | null;
+}
+
+export interface ImportProgress {
+  stage: "copying" | "unpacking" | "cleaning" | "zipping";
+  percent: number | null;
+}
+
+export type WishSource = { kind: "steam" | "manual"; name: string } | { kind: "feed"; id: number; name: string };
+export interface WishItem {
+  id: number;
+  title: string;
+  steamAppId: number | null;
+  url: string | null;
+  image: string | null;
+  releaseDate: string | null;
+  dateText: string | null;
+  sources: WishSource[];
+  addedAt: string;
+  libraryId: string | null;
+}
+export interface WishFeed {
+  id: number;
+  url: string;
+  name: string;
+  checkedAt: string | null;
+  error: string | null;
+  itemCount: number;
+}
+export interface WishlistState {
+  items: WishItem[];
+  steam: { steamId: string; profile: string; syncedAt: string | null; error: string | null; count: number } | null;
+  feeds: WishFeed[];
 }
 
 export interface Integrations {
@@ -196,7 +276,17 @@ export const api = {
 
   home: () => call<HomeData>("GET", "/api/home"),
   games: (f: GameFilters = {}) => call<GameSummary[]>("GET", `/api/games${qs({ ...f })}`),
-  genres: () => call<Array<{ name: string; count: number }>>("GET", "/api/genres"),
+  genres: (platform?: string) => call<Array<{ name: string; count: number }>>("GET", `/api/genres${qs({ platform })}`),
+  freeGames: () => call<{ games: FreeGame[]; errors: Array<{ store: string; message: string }>; itchConnected: boolean }>("GET", "/api/discover/free"),
+  addItchGame: (url: string) => call<{ folder: string }>("POST", "/api/discover/free/itch", { url }),
+  gameUpdates: (id: string) => call<{ source: string | null; items: GameUpdate[]; error?: string }>("GET", `/api/games/${id}/updates`),
+  downloadsFolder: () => call<{ folder: string; items: FolderItem[] }>("GET", "/api/downloads/folder"),
+  importFromFolder: (name: string, platform: string | null) => call<{ target: string }>("POST", "/api/downloads/folder/import", { name, platform }),
+  skipFolderItem: (name: string) => call("POST", "/api/downloads/folder/skip", { name }),
+  emulation: () => call<EmulationOverview>("GET", "/api/emulation"),
+  uploadBios: (file: File, emulator?: string) =>
+    upload<ServerBiosFile>("PUT", `/api/emulation/bios/${encodeURIComponent(file.name)}${emulator ? `?emulator=${emulator}` : ""}`, file, "application/octet-stream"),
+  deleteBios: (name: string) => call("DELETE", `/api/emulation/bios/${encodeURIComponent(name)}`),
   game: (id: string) => call<GameDetail>("GET", `/api/games/${id}`),
   updateGame: (id: string, patch: { title?: string | null; kidSafe?: boolean | null; controllerSupport?: string | null }) =>
     call<GameDetail>("PATCH", `/api/games/${id}`, patch),
@@ -219,7 +309,7 @@ export const api = {
   saveConnectors: (c: Partial<Connectors>) => call<Connectors>("PUT", "/api/connectors", c),
   testConnector: (name: string) => call<{ message: string }>("POST", `/api/connectors/${name}/test`),
   searchDownloads: (q: string) => call<SearchResult[]>("GET", `/api/downloads/search${qs({ q })}`),
-  grab: (r: { url: string; title: string; protocol: string }) => call<DownloadRecord>("POST", "/api/downloads", r),
+  grab: (r: { url: string; title: string; protocol: string; platform?: string | null }) => call<DownloadRecord>("POST", "/api/downloads", r),
   downloads: () => call<{ downloads: DownloadRecord[]; other: LiveDownload[] }>("GET", "/api/downloads"),
   controlDownload: (id: number, action: string, deleteFiles = false) => call("POST", `/api/downloads/${id}`, { action, deleteFiles }),
 
@@ -244,8 +334,18 @@ export const api = {
   setSavePath: (id: string, path: string | null) => call<GameDetail>("PUT", `/api/games/${id}/save-path`, { path }),
   suggestSavePath: (id: string) => call<{ paths: string[] }>("GET", `/api/games/${id}/save-path/suggest`),
 
-  calendar: (days = 120, platform = "pc") => call<ListingResult>("GET", `/api/calendar${qs({ days: String(days), platform })}`),
-  discover: () => call<{ trending: ListingResult; upcoming: ListingResult }>("GET", "/api/discover"),
+  calendar: (days = 120, platform = "pc", past = 0) => call<ListingResult & { error?: string }>("GET", `/api/calendar${qs({ days: String(days), platform, past: String(past) })}`),
+  addCalendarEntry: (e: { title: string; date: string; note?: string; url?: string }) => call<{ id: number }>("POST", "/api/calendar/entries", e),
+  deleteCalendarEntry: (id: string) => call("DELETE", `/api/calendar/entries/${id}`),
+  wishlist: () => call<WishlistState>("GET", "/api/wishlist"),
+  addWish: (title: string, url?: string) => call<WishlistState>("POST", "/api/wishlist", { title, url }),
+  removeWish: (id: number) => call<WishlistState>("DELETE", `/api/wishlist/${id}`),
+  syncWishlist: () => call<WishlistState>("POST", "/api/wishlist/sync"),
+  linkSteamWishlist: (profile: string) => call<WishlistState>("PUT", "/api/wishlist/steam", { profile }),
+  addWishFeed: (url: string, name?: string) => call<WishlistState>("POST", "/api/wishlist/feeds", { url, name }),
+  removeWishFeed: (id: number) => call<WishlistState>("DELETE", `/api/wishlist/feeds/${id}`),
+  discover: () => call<{ recent: ListingResult }>("GET", "/api/discover"),
+  discoverGame: (provider: string, id: string) => call<GameInfo>("GET", `/api/discover/game/${provider}/${id}`),
   discoverSearch: (q: string) => call<GameListing[]>("GET", `/api/discover/search${qs({ q })}`),
   videos: () => call<{ groups: Array<{ id: string; title: string; videos: Video[] }>; errors: string[] }>("GET", "/api/videos"),
   videoGroups: () => call<VideoGroup[]>("GET", "/api/videos/groups"),

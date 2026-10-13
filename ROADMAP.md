@@ -64,36 +64,38 @@ Status: `[x]` done, `[~]` partly done, `[ ]` not started.
 - [x] Fuller home page: featured hero with artwork, library rows mixed with latest news, videos and upcoming releases
 - [x] Release calendar of upcoming games (IGDB, then RAWG, then Steam without keys), PC or all platforms
 - [x] Discover page: search any game, see new and popular and coming soon, and (admins) find and grab downloads in one step
+- [x] "Search for releases" at the top of each Discover game page
+- [x] Free games tab: Epic's weekly giveaways (this week and next), Steam and GOG games at 100% off, Prime Gaming's monthly page and top free itch.io games; itch.io games can go straight into the library with an itch.io key
+- [x] Reviews and Guides video row (GameSpot, Skill Up, PowerPyx) next to Game Trailers
+- [x] Latest updates and patch notes on game pages, from the developer's Steam announcements
+- [x] Covers shown whole in the library (blurred fill instead of cropping)
+- [x] Wishlist: mirrors a public Steam wishlist, pulls games from RSS/Atom list feeds and takes games added by hand; one entry per game across sources, removals stick, "In library" once it arrives
+- [x] Calendar: past releases (last month or three), your own dates (launch parties, betas), and wishlist games with a release date
+- [x] "Recently added" follows each game folder's Date modified
 
 ## Acquisition
 
 - [x] qBittorrent: send, watch progress, pause/resume/remove
 - [x] SABnzbd: send, watch progress, pause/resume/remove
 - [x] Search through Prowlarr (usenet and torrent indexers, including 1337x through FlareSolverr in Prowlarr)
+- [x] Import progress: copying, unpacking and zipping show a percentage on the Downloads page
+- [x] Downloads folder import: games already in the downloads folder are listed to import (or skip) with the same clean-up, or imported automatically
 - [ ] Other torrent clients (Transmission, Deluge)
 - [ ] Wanted list with automatic RSS grabs
 
 The app only fetches what you point it at; it does not bundle indexers or sources.
 
-## Emulation (future)
+## Emulation
 
-Planned, not built yet. The library already handles one entry per folder; emulation adds a
-platform layer on top.
-
-1. **Platform folders.** Treat `roms/<platform>/` subfolders (`pc`, `ps1`, `ps2`, `ps3`,
-   `xbox`, `snes`, ...) as platforms. Each game gets a `platform` field; the web UI gets a
-   platform switcher with a layout per system (box-art ratios, controller hints, PS1/PS2
-   disc handling with `.cue/.bin`, `.chd`, `.m3u` for multi-disc). PC stays the default.
-2. **Metadata per platform.** IGDB and RAWG already know platforms; matching passes the
-   platform so "Ridge Racer" on PS1 doesn't match the PSP game. Libretro thumbnails and
-   ScreenScraper as optional sources.
-3. **Emulators in the desktop app.** Download emulator builds from their official sources
-   (RetroArch with cores, DuckStation, PCSX2, RPCS3, xemu) into the app's tools folder,
-   launch games with the right core/emulator and arguments, and track play time the same
-   way as PC games. Users supply their own BIOS files; the app shows which ones each
-   emulator needs and where to put them, and can fetch only what an emulator's project
-   publishes itself.
-4. **Emulator saves per profile.** Extend save sync to emulator save folders and memory
-   cards (per profile, per game), with a server-side save list visible on the web, so a
-   game started on the desktop continues on the ROG Ally.
-5. **In-browser play (maybe).** EmulatorJS for older systems, straight from the web UI.
+- [x] Platform folders: `Emulation/<system>/` (or `roms/`), one file or folder per game, kept apart from the PC games
+- [x] Emulation section with a tile per system and a shelf per system shaped like its box art (PS1, PS2, PS3, Xbox, SNES, ...)
+- [x] Metadata matched on the game's own system (IGDB and RAWG platform filters)
+- [x] Desktop app sets up RetroArch (with cores), DuckStation, PCSX2, RPCS3 and xemu from their official releases
+- [x] BIOS files from your own consoles: picked on the PC or uploaded once to the server for every PC; PS3 firmware from Sony's page; xemu's hard drive image from the xemu project
+- [x] Play emulated games from the app with play tracking; `gm emulators`, `gm bios pull` and `gm play` on the command line
+- [x] Emulator saves per profile: newer saves restored before playing, changed ones backed up after (RetroArch, DuckStation, PCSX2, RPCS3)
+- [x] Play in the browser with EmulatorJS (NES to PS1/PSP), sharing the in-game save with the desktop app
+- [x] Downloads can be sent straight to a system's folder
+- [ ] Xbox saves (they live inside xemu's hard drive image)
+- [ ] Per-game PS2 memory cards (PCSX2 shares one card across games today)
+- [ ] Multi-disc playlists (`.m3u`) generated automatically for PS1 and Saturn

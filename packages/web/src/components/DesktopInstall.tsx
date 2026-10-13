@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { GameDetail } from "@lootden/shared";
+import { EMULATORS, platformFor, type GameDetail } from "@lootden/shared";
 import { formatBytes } from "../api";
 import { bridgeError, desktop, useDesktopGame, type Drive } from "../desktop";
 
@@ -44,6 +44,7 @@ export function DesktopInstall({ game, autoFocus }: { game: GameDetail; autoFocu
   const lowSpace = drive && drive.freeBytes < game.sizeBytes * (game.packed ? 2 : 1);
 
   const p = progress;
+  const emulatorName = game.platform !== "pc" ? EMULATORS.find((e) => e.id === platformFor(game.platform).emulator)?.name : undefined;
   const downloading = busy && p?.type === "download";
   const pct = downloading ? (p.received / Math.max(1, p.total)) * 100 : 0;
 
@@ -52,7 +53,7 @@ export function DesktopInstall({ game, autoFocus }: { game: GameDetail; autoFocu
       <div className="install panel">
         <div className="inline">
           <button ref={button} className="primary" disabled={p?.type === "playing"} onClick={() => run(() => bridge.play(game.id))}>
-            {p?.type === "playing" ? "Playing…" : "▶ Play"}
+            {p?.type === "playing" ? "Playing…" : emulatorName ? `▶ Play in ${emulatorName}` : "▶ Play"}
           </button>
           <button className="secondary" onClick={() => run(() => bridge.openFolder(game.id))}>
             Open folder

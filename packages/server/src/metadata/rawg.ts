@@ -1,4 +1,4 @@
-import type { AgeRating } from "@lootden/shared";
+import type { AgeRating, Platform } from "@lootden/shared";
 import { limitedJson, RateLimiter, type FetchLike } from "./http.js";
 import type { Candidate, MetadataProvider, ProviderResult } from "./types.js";
 
@@ -47,13 +47,18 @@ export class RawgProvider implements MetadataProvider {
     return limitedJson<T>(limiter, this.fetchImpl, `${API}${path}?${qs}`);
   }
 
+  /** Any RAWG endpoint, for the Discover game page. */
+  raw<T>(path: string, params: Record<string, string> = {}): Promise<T> {
+    return this.get<T>(path, params);
+  }
+
   /** Games list with RAWG filters (dates, ordering, platforms...), for the calendar and Discover. */
   list(params: Record<string, string>): Promise<{ results: Array<RawgGame & { slug?: string; platforms?: Array<{ platform: { name: string } }> }> }> {
     return this.get("/games", params);
   }
 
-  async search(query: string): Promise<Candidate[]> {
-    const r = await this.get<{ results: RawgGame[] }>("/games", { search: query, page_size: "10", platforms: "4" });
+  async search(query: string, platform?: Platform): Promise<Candidate[]> {
+    const r = await this.get<{ results: RawgGame[] }>("/games", { search: query, page_size: "10", platforms: String(platform?.rawg ?? 4) });
     return r.results.map((g) => ({
       provider: this.name,
       providerId: String(g.id),

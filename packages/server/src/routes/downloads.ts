@@ -36,12 +36,29 @@ export function downloadRoutes(app: FastifyInstance, ctx: AppContext) {
     return wrap(() => dm.search(req.query.q!.trim()));
   });
 
-  app.post<{ Body: { url: string; title: string; protocol: "torrent" | "usenet" } }>("/api/downloads", async (req) => {
+  app.post<{ Body: { url: string; title: string; protocol: "torrent" | "usenet"; platform?: string | null } }>("/api/downloads", async (req) => {
     const p = requireAdmin(req);
     const b = req.body ?? ({} as never);
     if (!b.url || !b.title || !["torrent", "usenet"].includes(b.protocol)) throw new HttpProblem(400, "url, title and protocol (torrent or usenet) are required");
     if (!/^(magnet:|https?:\/\/)/i.test(b.url)) throw new HttpProblem(400, "Only magnet links and http(s) URLs can be sent");
     return wrap(() => dm.grab(b, p.user?.id ?? null));
+  });
+
+  // Games already in the downloads folder: list, import with clean-up, or skip.
+  app.get("/api/downloads/folder", async (req) => {
+    requireAdmin(req);
+    return wrap(async () => ({ folder: ctx.downloads.settings().import.folder, items: await dm.folderItems() }));
+  });
+  app.post<{ Body: { name?: string; platform?: string | null } }>("/api/downloads/folder/import", async (req) => {
+    requireAdmin(req);
+    if (!req.body?.name) throw new HttpProblem(400, "Which entry?");
+    return wrap(async () => ({ target: await dm.importFromFolder(req.body.name!, req.body.platform ?? null) }));
+  });
+  app.post<{ Body: { name?: string } }>("/api/downloads/folder/skip", async (req) => {
+    requireAdmin(req);
+    if (!req.body?.name) throw new HttpProblem(400, "Which entry?");
+    dm.skipFolderItem(req.body.name);
+    return { ok: true };
   });
 
   app.get("/api/downloads", async (req) => {

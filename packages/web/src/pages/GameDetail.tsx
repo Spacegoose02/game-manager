@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
-import type { GameDetail as Game } from "@lootden/shared";
+import { Link, useParams, useSearchParams } from "react-router-dom";
+import { browserRomFile, platformFor, type GameDetail as Game } from "@lootden/shared";
 import { api, formatBytes, type Candidate } from "../api";
 import { useAuth } from "../auth";
 import { Badges } from "../components/Badges";
@@ -8,6 +8,7 @@ import { Cover } from "../components/Cover";
 import { ArtworkEditor } from "../components/ArtworkEditor";
 import { DesktopInstall } from "../components/DesktopInstall";
 import { SavesPanel } from "../components/SavesPanel";
+import { UpdatesPanel } from "../components/UpdatesPanel";
 import { PreparePanel } from "../components/PreparePanel";
 import { desktop } from "../desktop";
 
@@ -44,6 +45,15 @@ export function GameDetail() {
             <p className="muted small">Age ratings: {m.ageRatings.map((r) => `${r.organization} ${r.rating}`).join(", ")}</p>
           ) : null}
           {m?.summary && <p className="summary">{m.summary}</p>}
+
+          {browserRomFile(game.files, platformFor(game.platform)) && (
+            <div className="inline">
+              <Link className="button primary" to={`/play/${game.id}`}>
+                ▶ Play in the browser
+              </Link>
+              <span className="muted small">Your save carries over to and from the desktop app.</span>
+            </div>
+          )}
 
           {desktop ? (
             <DesktopInstall game={game} autoFocus={params.get("install") === "1"} />
@@ -102,6 +112,8 @@ export function GameDetail() {
           </tbody>
         </table>
       </section>
+
+      <UpdatesPanel gameId={game.id} />
 
       <PreparePanel game={game} />
 

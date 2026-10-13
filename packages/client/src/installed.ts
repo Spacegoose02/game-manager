@@ -9,13 +9,15 @@ export interface InstalledGame {
   installedAt: string;
   /** Executable chosen to launch the game, relative to dir, once known. */
   executable?: string;
+  /** "pc", or the emulated system (played through an emulator instead of an executable). */
+  platform: string;
 }
 
 async function readManifest(dir: string): Promise<InstalledGame | null> {
   try {
     const m = JSON.parse(await readFile(path.join(dir, MANIFEST_NAME), "utf8"));
     if (typeof m.gameId !== "string") return null;
-    return { gameId: m.gameId, title: m.title ?? path.basename(dir), dir, installedAt: m.installedAt ?? "", executable: m.executable };
+    return { gameId: m.gameId, title: m.title ?? path.basename(dir), dir, installedAt: m.installedAt ?? "", executable: m.executable, platform: m.platform ?? "pc" };
   } catch {
     return null;
   }

@@ -31,13 +31,13 @@ export function Library() {
   };
 
   useEffect(() => {
-    api.genres().then(setGenres, () => {});
+    api.genres("pc").then(setGenres, () => {});
   }, []);
   useEffect(() => {
     const t = setTimeout(() => {
       const desc = sort === "added" || sort === "rating" || sort === "release" || sort === "size";
       api
-        .games({ search, genre, controller, kidSafe, sort, order: desc ? "desc" : "asc" })
+        .games({ search, genre, controller, kidSafe, platform: "pc", sort, order: desc ? "desc" : "asc" })
         .then((g) => {
           setGames(g);
           setError("");

@@ -1,17 +1,17 @@
 {
   "name": "@lootden/client",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "bin": {
     "gm": "dist/src/cli.js"
   },
   "dependencies": {
-    "@lootden/shared": "0.4.0",
+    "@lootden/shared": "0.5.0",
     "7zip-bin": "^5.2.0"
   },
   "devDependencies": {
-    "@lootden/server": "0.4.0",
+    "@lootden/server": "0.5.0",
     "@yao-pkg/pkg": "^6.6.0",
     "esbuild": "^0.25.0"
   },

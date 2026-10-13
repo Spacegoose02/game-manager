@@ -63,6 +63,51 @@ describe("release calendar and discover", () => {
   });
 });
 
+describe("discover game pages", () => {
+  it("lists recent releases and shows a game's details from Steam", async () => {
+    const recent = new Date(Date.now() - 10 * 86400_000);
+    const recentText = recent.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+    const rows =
+      `<a href="https://store.steampowered.com/app/10/New_Hit/"><span class="title">New Hit</span><div class="search_released responsive_secondrow">${recentText}</div></a>` +
+      '<a href="https://store.steampowered.com/app/570/Dota_2/"><span class="title">Dota 2</span><div class="search_released responsive_secondrow">Jul 9, 2013</div></a>';
+    const fetchImpl = (async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/search/results/") return Response.json({ results_html: rows });
+      if (url.pathname === "/api/appdetails")
+        return Response.json({
+          "10": {
+            success: true,
+            data: {
+              name: "New Hit",
+              steam_appid: 10,
+              short_description: "A <b>great</b> game.",
+              release_date: { date: recentText },
+              screenshots: [{ path_full: "https://cdn/1.jpg" }, { path_full: "https://cdn/2.jpg" }],
+              genres: [{ description: "Action" }],
+              developers: ["Studio"],
+              metacritic: { score: 88 },
+              movies: [{ name: "Teaser", mp4: { max: "https://cdn/teaser.mp4" } }, { name: "Launch Trailer", thumbnail: "https://cdn/t.jpg", mp4: { max: "https://cdn/launch.mp4" } }],
+            },
+          },
+        });
+      return new Response("nope", { status: 404 });
+    }) as typeof fetch;
+    const { app } = await makeApp(root, { apiToken: "svc" }, { fetchImpl });
+    const headers = { authorization: "Bearer svc" };
+    const d = (await app.inject({ url: "/api/discover", headers })).json();
+    assert.deepEqual(d.recent.items.map((i: { name: string }) => i.name), ["New Hit"], "old evergreen games are left out");
+
+    const info = (await app.inject({ url: "/api/discover/game/steam/10", headers })).json();
+    assert.equal(info.summary, "A great game.");
+    assert.deepEqual(info.trailer, { url: "https://cdn/launch.mp4", poster: "https://cdn/t.jpg" });
+    assert.equal(info.screenshots.length, 2);
+    assert.equal(info.rating, 88);
+    assert.deepEqual(info.developers, ["Studio"]);
+    assert.equal((await app.inject({ url: "/api/discover/game/bogus/10", headers })).statusCode, 404);
+    await app.close();
+  });
+});
+
 describe("youtube videos", () => {
   it("parses channel feeds and skips shorts", () => {
     const { channel, videos } = parseYouTubeFeed(YT_FEED);
@@ -84,6 +129,7 @@ describe("youtube videos", () => {
     const groups = (await app.inject({ url: "/api/videos/groups", headers })).json();
     assert.equal(groups[0].title, "Game Trailers");
     assert.equal(groups[0].channels.length, 3);
+    assert.equal(groups[1].title, "Reviews and Guides");
 
     const saved = await app.inject({
       method: "PUT",
@@ -92,12 +138,12 @@ describe("youtube videos", () => {
       payload: { groups: [...groups.map((g: { channels: Array<{ id: string }> }) => ({ ...g, channels: g.channels.map((c) => c.id) })), { title: "Game Reviews", channels: ["@SkillUp"] }] },
     });
     assert.equal(saved.statusCode, 200, saved.body);
-    assert.deepEqual(saved.json()[1].channels, [{ id: "UCZ7AeeVbyslLM_8-nVy2B8Q", name: "Skill Up" }]);
+    assert.deepEqual(saved.json()[2].channels, [{ id: "UCZ7AeeVbyslLM_8-nVy2B8Q", name: "Skill Up" }]);
     const bad = await app.inject({ method: "PUT", url: "/api/videos/groups", headers, payload: { groups: [{ title: "X", channels: ["not a channel"] }] } });
     assert.equal(bad.statusCode, 400);
 
     const rows = (await app.inject({ url: "/api/videos", headers })).json();
-    assert.equal(rows.groups.length, 2);
+    assert.equal(rows.groups.length, 3);
     assert.equal(rows.groups[1].videos[0].title, "Big Game - Official Trailer");
     await app.close();
   });

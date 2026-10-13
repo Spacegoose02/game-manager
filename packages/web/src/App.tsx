@@ -5,9 +5,14 @@ import { Layout } from "./components/Layout";
 import { installSpatialNavigation } from "./gamepad";
 import { Admin } from "./pages/Admin";
 import { Apps } from "./pages/Apps";
+import { Wishlist } from "./pages/Wishlist";
 import { Calendar } from "./pages/Calendar";
 import { Discover } from "./pages/Discover";
+import { DiscoverGame } from "./pages/DiscoverGame";
 import { Downloads } from "./pages/Downloads";
+import { Emulation, EmulationSystem } from "./pages/Emulation";
+import { EmulatorSetup } from "./pages/EmulatorSetup";
+import { PlayInBrowser } from "./pages/PlayInBrowser";
 import { GameDetail } from "./pages/GameDetail";
 import { Home } from "./pages/Home";
 import { Library } from "./pages/Library";
@@ -44,7 +49,13 @@ export function App() {
         <Route path="games/:id" element={<GameDetail />} />
         <Route path="news" element={<News />} />
         <Route path="discover" element={<Discover />} />
+        <Route path="discover/:provider/:id" element={<DiscoverGame />} />
         <Route path="calendar" element={<Calendar />} />
+        <Route path="wishlist" element={<Wishlist />} />
+        <Route path="emulation" element={<Emulation />} />
+        <Route path="play/:id" element={<PlayInBrowser />} />
+        <Route path="emulation/setup" element={<EmulatorSetup />} />
+        <Route path="emulation/:platform" element={<EmulationSystem />} />
         <Route path="profile" element={<Profile />} />
         <Route path="admin" element={<Admin />} />
         <Route path="downloads" element={<Downloads />} />

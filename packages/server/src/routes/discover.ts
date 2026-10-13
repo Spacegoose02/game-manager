@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { GameListing } from "@lootden/shared";
 import { HttpProblem, requireAdmin, requireUser, type AppContext } from "../context.js";
+import { titleKey } from "../metadata/calendar.js";
 
 /** Release calendar, Discover and YouTube rows. Kid profiles don't get these: nothing here is age-rated. */
 export function discoverRoutes(app: FastifyInstance, ctx: AppContext) {
@@ -15,19 +16,90 @@ export function discoverRoutes(app: FastifyInstance, ctx: AppContext) {
     }
   };
 
-  app.get<{ Querystring: { days?: string; platform?: string } }>("/api/calendar", async (req) => {
+  app.get<{ Querystring: { days?: string; platform?: string; past?: string } }>("/api/calendar", async (req) => {
+    const p = requireUser(req);
     grownUp(req);
     const days = Math.min(Math.max(Number(req.query.days) || 120, 7), 365);
-    return upstream(() => ctx.calendar.upcoming(days, req.query.platform === "all" ? "all" : "pc"));
+    const past = Math.min(Math.max(Number(req.query.past) || 0, 0), 365);
+    const from = new Date(Date.now() - past * 86400_000).toISOString().slice(0, 10);
+    const to = new Date(Date.now() + days * 86400_000).toISOString().slice(0, 10);
+    // The stores being down shouldn't hide the household's own dates.
+    let listed: { items: GameListing[]; source: string; error?: string };
+    try {
+      listed = await ctx.calendar.upcoming(days, req.query.platform === "all" ? "all" : "pc", past);
+    } catch (err) {
+      listed = { items: [], source: "", error: (err as Error).message };
+    }
+    const wished = ctx.wishlist.keys();
+    const items: GameListing[] = listed.items.map((i) => ({ ...i, wishlisted: wished.has(titleKey(i.name)) }));
+    const known = new Set(items.map((i) => titleKey(i.name)));
+    // Wishlist games with a date in range that the release lists missed.
+    for (const w of ctx.wishlist.list()) {
+      if (!w.releaseDate || w.releaseDate < from || w.releaseDate > to || known.has(titleKey(w.title))) continue;
+      items.push({ provider: "wishlist", providerId: String(w.id), name: w.title, releaseDate: w.releaseDate, dateText: null, coverUrl: null, imageUrl: w.image, platforms: [], genres: [], url: w.url, libraryId: w.libraryId, wishlisted: true });
+    }
+    const custom = ctx.db.prepare("SELECT * FROM calendar_entries WHERE date >= ? AND date <= ? ORDER BY date").all(from, to) as Array<{ id: number; title: string; date: string; note: string | null; url: string | null; created_by: number | null }>;
+    for (const c of custom) {
+      items.push({ provider: "custom", providerId: String(c.id), name: c.title, releaseDate: c.date, dateText: null, coverUrl: null, imageUrl: null, platforms: [], genres: [], url: c.url, libraryId: null, note: c.note, canDelete: p.role === "admin" || (p.user?.id ?? -1) === c.created_by });
+    }
+    items.sort((a, b) => (a.releaseDate ?? "9999").localeCompare(b.releaseDate ?? "9999"));
+    return { ...listed, items: ctx.calendar.markLibrary(items).map((i, n) => ({ ...i, libraryId: i.libraryId ?? items[n]!.libraryId })) };
+  });
+
+  // Dates added by people in the household: a launch party, a beta weekend, a sale.
+  app.post<{ Body: { title?: string; date?: string; note?: string; url?: string } }>("/api/calendar/entries", async (req) => {
+    const p = requireUser(req);
+    grownUp(req);
+    const title = String(req.body?.title ?? "").trim();
+    const date = String(req.body?.date ?? "");
+    if (!title) throw new HttpProblem(400, "Give the entry a title");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date))) throw new HttpProblem(400, "Pick a date");
+    const url = String(req.body?.url ?? "").trim();
+    if (url && !/^https?:\/\//i.test(url)) throw new HttpProblem(400, "Links need to start with http:// or https://");
+    const r = ctx.db
+      .prepare("INSERT INTO calendar_entries (title, date, note, url, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?) RETURNING id")
+      .get(title.slice(0, 200), date, String(req.body?.note ?? "").trim().slice(0, 500) || null, url || null, p.user?.id ?? null, new Date().toISOString()) as { id: number };
+    return { id: r.id };
+  });
+  app.delete<{ Params: { id: string } }>("/api/calendar/entries/:id", async (req) => {
+    const p = requireUser(req);
+    const row = ctx.db.prepare("SELECT created_by FROM calendar_entries WHERE id = ?").get(Number(req.params.id)) as { created_by: number | null } | undefined;
+    if (!row) throw new HttpProblem(404, "No such entry");
+    if (p.role !== "admin" && (p.user?.id ?? -1) !== row.created_by) throw new HttpProblem(403, "Only the person who added it (or an admin) can remove it");
+    ctx.db.prepare("DELETE FROM calendar_entries WHERE id = ?").run(Number(req.params.id));
+    return { ok: true };
+  });
+
+  // Free games to claim this week, from each store's own listings.
+  app.get("/api/discover/free", async (req) => {
+    grownUp(req);
+    return ctx.freeGames.list();
+  });
+  // Admin: download a free itch.io game straight into the library.
+  app.post<{ Body: { url?: string } }>("/api/discover/free/itch", async (req) => {
+    requireAdmin(req);
+    if (!req.body?.url) throw new HttpProblem(400, "Which game?");
+    try {
+      const folder = await ctx.freeGames.addItchGame(req.body.url, ctx.config.gamesDir);
+      await ctx.library.rescan();
+      return { folder };
+    } catch (err) {
+      throw new HttpProblem(400, (err as Error).message);
+    }
   });
 
   app.get("/api/discover", async (req) => {
     grownUp(req);
-    const [trending, upcoming] = await Promise.all([
-      upstream(() => ctx.calendar.trending()),
-      upstream(() => ctx.calendar.upcoming()),
-    ]);
-    return { trending, upcoming: { ...upcoming, items: upcoming.items.slice(0, 30) } };
+    return { recent: await upstream(() => ctx.calendar.recent()) };
+  });
+
+  /** One game's page in Discover: details, screenshots and trailer from the service that listed it. */
+  app.get<{ Params: { provider: string; id: string } }>("/api/discover/game/:provider/:id", async (req) => {
+    grownUp(req);
+    if (!["igdb", "rawg", "steam"].includes(req.params.provider)) throw new HttpProblem(404, "Unknown source");
+    const info = await upstream(() => ctx.calendar.info(req.params.provider, req.params.id));
+    if (!info) throw new HttpProblem(404, "Game not found");
+    return info;
   });
 
   /** Any game the metadata services know, not just the library. */
@@ -47,6 +119,7 @@ export function discoverRoutes(app: FastifyInstance, ctx: AppContext) {
       platforms: [],
       genres: [],
       url: c.provider === "steam" ? `https://store.steampowered.com/app/${c.providerId}/` : null,
+      // Discover search results open the in-app page, which loads the rest.
       libraryId: null,
     }));
     return ctx.calendar.markLibrary(listings);

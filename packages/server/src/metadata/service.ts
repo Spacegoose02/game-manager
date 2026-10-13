@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { GameMetadata } from "@lootden/shared";
+import { PC_PLATFORM, platformFor, type GameMetadata } from "@lootden/shared";
 import type { Library } from "../catalog/library.js";
 import type { ScannedGame } from "../catalog/scanner.js";
 import { now, type Db } from "../db/database.js";
@@ -142,12 +142,13 @@ export class MetadataService {
   }
 
   /** Searches every enabled provider for a game, best matches first. */
-  async search(query: string, year: number | null = null): Promise<Array<Candidate & { score: number }>> {
+  async search(query: string, year: number | null = null, platform?: string): Promise<Array<Candidate & { score: number }>> {
     const clean = { query, year };
+    const system = platform && platform !== PC_PLATFORM ? platformFor(platform) : undefined;
     const results: Array<Candidate & { score: number }> = [];
     for (const p of this.providers) {
       try {
-        for (const c of await p.search(query)) results.push({ ...c, score: matchScore(clean, c) });
+        for (const c of await p.search(query, system)) results.push({ ...c, score: matchScore(clean, c) });
       } catch (err) {
         this.log.warn({ provider: p.name, err: (err as Error).message }, "Metadata search failed");
       }
@@ -161,9 +162,12 @@ export class MetadataService {
     const existing = this.db.prepare("SELECT locked FROM metadata WHERE game_id = ?").get(gameId) as { locked: number } | undefined;
     if (existing?.locked) return null;
 
-    const clean = cleanTitle(game.source);
+    // Emulated games are matched on their tidied ROM name, on their own system only.
+    const emulated = game.platform !== PC_PLATFORM;
+    const clean = cleanTitle(emulated ? game.title : game.source);
+    const system = emulated ? platformFor(game.platform) : undefined;
     for (const p of this.providers) {
-      const candidates = (await p.search(clean.query)).map((c) => ({ ...c, score: matchScore(clean, c) }));
+      const candidates = (await p.search(clean.query, system)).map((c) => ({ ...c, score: matchScore(clean, c) }));
       const best = candidates.sort((a, b) => b.score - a.score)[0];
       if (best && best.score >= AUTO_MATCH_THRESHOLD) {
         const result = await p.fetch(best.providerId);

@@ -13,11 +13,13 @@ export interface DesktopSettings {
   keepArchives: boolean;
   /** Start in fullscreen "couch" mode (handhelds, TVs). */
   fullscreen: boolean;
+  /** Emulators, their BIOS files and saves. Empty means the app's data folder. */
+  toolsDir: string;
 }
 
 export function defaultSettings(): DesktopSettings {
   const installDir = process.platform === "win32" ? "C:\\Games" : path.join(os.homedir(), "Games");
-  return { serverUrl: "", apiToken: "", installDir, libraryDirs: [installDir], keepArchives: false, fullscreen: false };
+  return { serverUrl: "", apiToken: "", installDir, libraryDirs: [installDir], keepArchives: false, fullscreen: false, toolsDir: "" };
 }
 
 export class SettingsStore {

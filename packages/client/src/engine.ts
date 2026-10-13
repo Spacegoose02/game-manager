@@ -6,5 +6,6 @@ export { extractArchive, findSevenZip } from "./extractor.js";
 export { listInstalled, uninstallGame, type InstalledGame } from "./installed.js";
 export { installGame, MANIFEST_NAME, pickGame, type InstallEvent, type InstallOptions } from "./installer.js";
 export { findExecutable, launchAndTrack, saveExecutable } from "./launcher.js";
+export * from "./emulators.js";
 export { backupSaves, expandSavePath, restoreSaves } from "./saves.js";
 export { findSetup, prepareGame, uploadInstalledFolder, type PrepareStep } from "./prepare.js";

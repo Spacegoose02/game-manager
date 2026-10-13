@@ -1,8 +1,13 @@
-import type { GameSummary } from "@lootden/shared";
+import { platformFor, type GameSummary } from "@lootden/shared";
 
 export function Badges({ game, compact = false }: { game: GameSummary; compact?: boolean }) {
   return (
     <div className={`badges${compact ? " badges-compact" : ""}`}>
+      {game.platform && game.platform !== "pc" && (
+        <span className="badge badge-platform" style={{ borderColor: platformFor(game.platform).color }} title={platformFor(game.platform).name}>
+          {platformFor(game.platform).short}
+        </span>
+      )}
       {game.controllerSupport === "full" && <span className="badge badge-pad" title="Full controller support">🎮 {compact ? "" : "Controller"}</span>}
       {game.controllerSupport === "partial" && <span className="badge badge-pad-partial" title="Partial controller support">🎮 {compact ? "½" : "Partial"}</span>}
       {game.kidSafe === true && <span className="badge badge-kid" title="Suitable for kids">{compact ? "★" : "Kid-safe"}</span>}

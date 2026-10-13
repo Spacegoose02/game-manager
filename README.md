@@ -49,6 +49,39 @@ Each top-level entry in the games folder is one game:
 Archives (including split sets like `.part1.rar`, `.7z.001`, `.r00`) are unpacked on the
 player's PC after download, then removed. Loose files are copied as they are.
 
+### Console games (Emulation)
+
+Console games go in an `Emulation` folder (or `roms`), one folder per system. Every file or
+folder inside a system's folder is one game, and they show up in the **Emulation** section
+instead of the PC library:
+
+```
+/mnt/user/games/Emulation/
+  ps1/Crash Bandicoot (USA)/Crash Bandicoot (USA).cue + .bin
+  ps2/Okami (USA).iso
+  ps3/Demon's Souls/PS3_GAME/USRDIR/EBOOT.BIN
+  xbox/Halo (USA).iso
+  snes/Super Mario World (USA).sfc
+```
+
+System folders: `ps1` (or `psx`), `ps2`, `ps3`, `xbox`, `psp`, `nes`, `snes`, `n64`, `gb`,
+`gbc`, `gba`, `nds`, `gamecube`, `wii`, `genesis` (or `megadrive`), `saturn`, `dreamcast`.
+Metadata is matched on that system only.
+
+- **Desktop app:** Emulation, then Emulators and BIOS sets up RetroArch, DuckStation, PCSX2,
+  RPCS3 and xemu from their official releases (RetroArch cores come from the libretro
+  buildbot). BIOS files come from your own consoles: pick them on the PC, or upload them once
+  on that page (admins) and press "Get BIOS files from the server" on each PC. PS3 firmware
+  links to Sony's download page. **Play** starts the right emulator, tracks play time and
+  syncs saves per profile: newer saves come down before you play, changed ones go up after.
+- **Browser:** single-file games (cartridge ROMs, CHD, PBP, ISO, single-track BIN) for NES,
+  SNES, N64, Game Boy, GBA, DS, Genesis, Saturn, PS1 and PSP play in the browser with
+  EmulatorJS. The in-game save (battery save or PS1 memory card) is the same one the desktop
+  app uses, so you can switch between the two. Set `GM_EMULATORJS_DATA` to a self-hosted copy
+  of EmulatorJS's `data/` folder to play without its CDN.
+- **Downloads:** "Send to" on the search results puts a finished download straight into a
+  system's folder.
+
 ## Run the server
 
 Docker Compose:
@@ -80,11 +113,16 @@ The important ones:
 | `GM_OIDC_NAME`, `GM_OIDC_ADMIN_GROUP`, `GM_OIDC_AUTO_CREATE` | Button label, group that makes someone admin, create profiles on first login |
 | `GM_AUTH_HEADER_USER`, `GM_TRUSTED_PROXIES`, `GM_AUTH_HEADER_ADMIN_GROUP` | Trust forward-auth headers (e.g. `Remote-User`) from these proxy addresses |
 | `GM_API_TOKEN` | Optional admin token for scripts |
+| `GM_EMULATORJS_DATA` | Where the browser emulator loads from (default: the EmulatorJS CDN) |
 
 You don't need environment variables for keys or sign-in: **Admin, Connections and sign-in**
 sets the public address, TinyAuth/OIDC and the IGDB, RAWG and SteamGridDB keys, each with a
 Test button. Values there win over the environment. Download clients (qBittorrent, SABnzbd,
-Prowlarr) are set under **Downloads, Connections**.
+Prowlarr) are set under **Downloads, Connections**, along with the downloads folder to import
+from (games already sitting there are listed on the Downloads page, or imported automatically)
+and an optional itch.io API key that lets admins add free itch.io games from **Discover, Free games**.
+The **Wishlist** page links a public Steam wishlist and any RSS/Atom list feeds (under **Sources**,
+admins only); they are re-checked every six hours.
 
 ### Sign in with TinyAuth
 

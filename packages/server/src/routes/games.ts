@@ -4,7 +4,7 @@ import path from "node:path";
 import type { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { safeFolderName, type ControllerSupport, type GameSummary } from "@lootden/shared";
+import { PC_PLATFORM, safeFolderName, type ControllerSupport, type GameSummary } from "@lootden/shared";
 import type { GameQuery } from "../catalog/library.js";
 import { resolveGameFile } from "../catalog/scanner.js";
 import { HttpProblem, requireAdmin, requireUser, type AppContext } from "../context.js";
@@ -37,6 +37,7 @@ type ListQuery = {
   controller?: GameQuery["controller"];
   kidSafe?: string;
   missingMetadata?: string;
+  platform?: string;
   sort?: GameQuery["sort"];
   order?: GameQuery["order"];
   limit?: string;
@@ -60,32 +61,39 @@ export function gameRoutes(app: FastifyInstance, ctx: AppContext) {
       controller: q.controller,
       kidSafe: kidOnly(req) || q.kidSafe === "true" || q.kidSafe === "1",
       missingMetadata: q.missingMetadata === "true",
+      platform: q.platform || undefined,
       sort: q.sort,
       order: q.order,
       limit: q.limit ? Number(q.limit) : undefined,
     });
   });
 
-  app.get("/api/genres", async (req) => ctx.library.genres(kidOnly(req)));
+  app.get<{ Querystring: { platform?: string } }>("/api/genres", async (req) => ctx.library.genres(kidOnly(req), req.query.platform || undefined));
+  app.get("/api/platforms", async (req) => ctx.library.platforms(kidOnly(req)));
 
   /** Rows for the featured home page. */
   app.get("/api/home", async (req) => {
     const p = requireUser(req);
     const kidSafe = p.kidMode;
-    const all = ctx.library.list({ kidSafe });
+    // The home page is the PC shelf; emulated games get one row of their own and the Emulation section.
+    const everything = ctx.library.list({ kidSafe });
+    const all = everything.filter((g) => g.platform === PC_PLATFORM);
     const sections: Array<{ id: string; title: string; games: GameSummary[] }> = [];
     const add = (id: string, title: string, games: GameSummary[]) => games.length && sections.push({ id, title, games: games.slice(0, 20) });
 
     if (p.user) {
       const states = ctx.users.gameStates(p.user.id).filter((s) => s.lastPlayedAt);
-      const byId = new Map(all.map((g) => [g.id, g]));
+      const byId = new Map(everything.map((g) => [g.id, g]));
       add("continue", "Continue playing", [...new Set(states.map((s) => s.gameId))].map((id) => byId.get(id)!).filter(Boolean));
     }
-    add("recent", "Recently added", ctx.library.list({ kidSafe, sort: "added", order: "desc", limit: 20 }));
+    // Disc images and installers wait for an admin to install them once in the app and upload the result.
+    if (p.role === "admin") add("setup", "Needs setting up", all.filter((g) => g.needsSetup));
+    add("recent", "Recently added", ctx.library.list({ kidSafe, platform: PC_PLATFORM, sort: "added", order: "desc", limit: 20 }));
+    add("emulation", "New on the Emulation shelf", ctx.library.list({ kidSafe, platform: "emulated", sort: "added", order: "desc", limit: 20 }));
     add("top", "Top rated", all.filter((g) => g.rating != null).sort((a, b) => b.rating! - a.rating!));
     add("controller", "Great with a controller", all.filter((g) => g.controllerSupport === "full"));
     if (!kidSafe) add("kids", "Family friendly", all.filter((g) => g.kidSafe === true));
-    for (const { name } of ctx.library.genres(kidSafe).slice(0, 6)) add(`genre:${name}`, name, all.filter((g) => g.genres.includes(name)));
+    for (const { name } of ctx.library.genres(kidSafe, PC_PLATFORM).slice(0, 6)) add(`genre:${name}`, name, all.filter((g) => g.genres.includes(name)));
     const featured = all
       .filter((g) => g.coverUrl)
       .sort(() => Math.random() - 0.5)
@@ -98,6 +106,18 @@ export function gameRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.get<{ Params: { id: string } }>("/api/games/:id", async (req) => visibleGame(req, req.params.id));
+
+  /** Latest update notes from the game's Steam news feed; empty when the game isn't on Steam. */
+  app.get<{ Params: { id: string } }>("/api/games/:id/updates", async (req) => {
+    const game = visibleGame(req, req.params.id);
+    const appId = game.metadata?.steamAppId;
+    if (!appId) return { source: null, items: [] };
+    try {
+      return { source: "Steam", items: await ctx.updates.forSteamApp(appId) };
+    } catch (err) {
+      return { source: "Steam", items: [], error: (err as Error).message };
+    }
+  });
 
   for (const kind of ["cover", "background"] as const) {
     app.get<{ Params: { id: string } }>(`/api/games/:id/${kind}`, async (req, reply) => {
@@ -167,7 +187,9 @@ export function gameRoutes(app: FastifyInstance, ctx: AppContext) {
     return ctx.library.replaceGame(game.id, name);
   });
 
-  app.get<{ Params: { id: string; index: string } }>("/api/games/:id/files/:index", async (req, reply) => {
+  // The trailing /:name form lets in-browser emulators see the file's extension.
+  for (const route of ["/api/games/:id/files/:index", "/api/games/:id/files/:index/:name"])
+  app.get<{ Params: { id: string; index: string } }>(route, async (req, reply) => {
     const game = visibleGame(req, req.params.id);
     const file = game.files[Number(req.params.index)];
     if (!file) throw new HttpProblem(404, "File not found");
@@ -230,7 +252,7 @@ export function gameRoutes(app: FastifyInstance, ctx: AppContext) {
     requireAdmin(req);
     const game = ctx.library.get(req.params.id);
     if (!game) throw new HttpProblem(404, "Game not found");
-    return ctx.metadata.search(req.query.q || game.title);
+    return ctx.metadata.search(req.query.q || game.title, null, game.platform);
   });
 
   app.put<{ Params: { id: string }; Body: { provider: string; providerId: string } }>("/api/games/:id/metadata", async (req) => {

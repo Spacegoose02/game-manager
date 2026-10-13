@@ -59,11 +59,24 @@ export async function findServerSevenZip(): Promise<{ path: string; rar: boolean
   return null;
 }
 
-function run(bin: string, args: string[], cwd?: string): Promise<void> {
+/** Where an import is: the step and how far through it (null when the step can't tell). */
+export interface ImportProgress {
+  stage: "copying" | "unpacking" | "cleaning" | "zipping";
+  percent: number | null;
+}
+export type ProgressFn = (p: ImportProgress) => void;
+
+/** Runs 7-Zip; with onPercent, reads its "-bsp1" progress output ("  42% 3 - file"). */
+function run(bin: string, args: string[], cwd?: string, onPercent?: (n: number) => void): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { cwd, stdio: ["ignore", "ignore", "pipe"] });
+    const child = spawn(bin, onPercent ? [...args.filter((a) => a !== "-bd"), "-bsp1"] : args, { cwd, stdio: ["ignore", onPercent ? "pipe" : "ignore", "pipe"] });
     let err = "";
-    child.stderr.on("data", (d) => (err += d.toString()));
+    child.stdout?.on("data", (d: Buffer) => {
+      const all = [...d.toString().matchAll(/(\d{1,3})%/g)];
+      const last = all[all.length - 1];
+      if (last) onPercent!(Math.min(100, Number(last[1])));
+    });
+    child.stderr?.on("data", (d) => (err += d.toString()));
     child.on("error", reject);
     child.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`7-Zip exited with code ${code}: ${err.trim().slice(0, 300)}`))));
   });
@@ -90,7 +103,14 @@ export interface TidyReport {
  * unpacks nested archives, deletes junk, unwraps a lone top folder, then either zips it
  * as "<Title> v<version>.zip" in the games folder or renames the folder to that.
  */
-export async function tidyDownload(staging: string, releaseName: string, gamesDir: string, opts: TidyOptions, sevenZip: { path: string; rar: boolean } | null): Promise<TidyReport> {
+export async function tidyDownload(
+  staging: string,
+  releaseName: string,
+  gamesDir: string,
+  opts: TidyOptions,
+  sevenZip: { path: string; rar: boolean } | null,
+  onProgress: ProgressFn = () => {},
+): Promise<TidyReport> {
   const report: TidyReport = { target: "", removed: [], extracted: [], warnings: [] };
 
   if (opts.extract) {
@@ -101,13 +121,17 @@ export async function tidyDownload(staging: string, releaseName: string, gamesDi
       const sets = groupArchiveSets(files);
       if (!sets.length) break;
       let progress = false;
-      for (const set of sets) {
+      for (const [i, set] of sets.entries()) {
         if (set.kind === "rar" && !sevenZip.rar) {
           report.warnings.push(`${path.basename(set.first)}: RAR needs full 7-Zip on the server`);
           continue;
         }
         try {
-          await run(sevenZip.path, ["x", set.first, `-o${path.dirname(set.first)}`, "-y", "-bd", "-pgm-no-password"]);
+          // Several archives share the bar: each gets its slice of the 100%.
+          onProgress({ stage: "unpacking", percent: Math.floor((i / sets.length) * 100) });
+          await run(sevenZip.path, ["x", set.first, `-o${path.dirname(set.first)}`, "-y", "-bd", "-pgm-no-password"], undefined, (n) =>
+            onProgress({ stage: "unpacking", percent: Math.floor(((i + n / 100) / sets.length) * 100) }),
+          );
           for (const v of set.volumes) await rm(v, { force: true });
           report.extracted.push(path.relative(staging, set.first));
           progress = true;
@@ -120,6 +144,7 @@ export async function tidyDownload(staging: string, releaseName: string, gamesDi
   }
 
   if (opts.stripJunk) {
+    onProgress({ stage: "cleaning", percent: null });
     // Deepest first, so removing a junk folder never trips over its children.
     for (const f of (await walk(staging)).sort((a, b) => b.depth - a.depth)) {
       if (!isJunk(f.name, f.depth)) continue;
@@ -145,7 +170,8 @@ export async function tidyDownload(staging: string, releaseName: string, gamesDi
     const temp = path.join(gamesDir, `.${name}.zip.importing`);
     await rm(temp, { force: true });
     // -mx1: games barely compress, so favour speed.
-    await run(sevenZip.path, ["a", "-tzip", "-mx1", "-bd", "-y", temp, "*"], root);
+    onProgress({ stage: "zipping", percent: 0 });
+    await run(sevenZip.path, ["a", "-tzip", "-mx1", "-bd", "-y", temp, "*"], root, (n) => onProgress({ stage: "zipping", percent: n }));
     await rename(temp, target);
     await rm(staging, { recursive: true, force: true });
     report.target = target;

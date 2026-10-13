@@ -117,7 +117,7 @@ export async function installGame(api: GameServerClient, gameId: string, opts: I
   await writeFile(
     path.join(gameDir, MANIFEST_NAME),
     JSON.stringify(
-      { gameId: game.id, title: game.title, source: game.source, serverModifiedAt: game.modifiedAt, installedAt: new Date().toISOString() },
+      { gameId: game.id, title: game.title, source: game.source, platform: game.platform, serverModifiedAt: game.modifiedAt, installedAt: new Date().toISOString() },
       null,
       2,
     ) + "\n",

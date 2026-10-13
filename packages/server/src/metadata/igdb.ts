@@ -1,4 +1,4 @@
-import type { AgeRating } from "@lootden/shared";
+import type { AgeRating, Platform } from "@lootden/shared";
 import { HttpError, limitedJson, RateLimiter, type FetchLike } from "./http.js";
 import type { Candidate, MetadataProvider, ProviderResult } from "./types.js";
 
@@ -114,11 +114,12 @@ export class IgdbProvider implements MetadataProvider {
     }
   }
 
-  async search(query: string): Promise<Candidate[]> {
+  async search(query: string, platform?: Platform): Promise<Candidate[]> {
     const q = query.replace(/["\\]/g, " ");
-    const games = await this.query((f) => `search "${q}"; fields ${f}; where version_parent = null; limit 15;`);
-    // PC releases first; the library is PC games.
-    games.sort((a, b) => Number(b.platforms?.includes(PC) ?? false) - Number(a.platforms?.includes(PC) ?? false));
+    const only = platform?.igdb && platform.igdb !== PC ? ` & platforms = (${platform.igdb})` : "";
+    const games = await this.query((f) => `search "${q}"; fields ${f}; where version_parent = null${only}; limit 15;`);
+    // PC releases first for PC games.
+    if (!only) games.sort((a, b) => Number(b.platforms?.includes(PC) ?? false) - Number(a.platforms?.includes(PC) ?? false));
     return games.map((g) => ({
       provider: this.name,
       providerId: String(g.id),

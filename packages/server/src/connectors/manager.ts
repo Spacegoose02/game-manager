@@ -1,5 +1,9 @@
-import { cp, mkdir, rename, rm, stat } from "node:fs/promises";
+import { createReadStream, createWriteStream } from "node:fs";
+import { mkdir, readdir, rename, rm, stat, utimes } from "node:fs/promises";
+import { Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import path from "node:path";
+import { PC_PLATFORM, platformFor } from "@lootden/shared";
 import type { Library } from "../catalog/library.js";
 import { now, type Db } from "../db/database.js";
 import type { FetchLike } from "../metadata/http.js";
@@ -7,8 +11,52 @@ import { ProwlarrClient, type SearchResult } from "./prowlarr.js";
 import { QBittorrentClient } from "./qbittorrent.js";
 import { SabnzbdClient } from "./sabnzbd.js";
 import { loadConnectorSettings, type ConnectorSettings } from "./settings.js";
-import { findServerSevenZip, tidyDownload, type TidyOptions } from "./tidy.js";
+import { findServerSevenZip, tidyDownload, type ImportProgress, type ProgressFn, type TidyOptions } from "./tidy.js";
 import type { ActiveDownload, DownloadClient } from "./types.js";
+
+export interface FolderItem {
+  name: string;
+  sizeBytes: number;
+  modifiedAt: string;
+  settling: boolean;
+  status: "new" | "importing" | "imported" | "failed" | "skipped";
+  target: string | null;
+  error: string | null;
+  progress: ImportProgress | null;
+}
+
+/** Copies a file or folder, reporting bytes as they go (fs.cp can't say how far it got). */
+async function copyTree(source: string, target: string, onBytes: (n: number) => void): Promise<void> {
+  const s = await stat(source);
+  if (s.isDirectory()) {
+    await mkdir(target, { recursive: true });
+    for (const e of await readdir(source)) await copyTree(path.join(source, e), path.join(target, e), onBytes);
+  } else if (s.isFile()) {
+    const count = new Transform({
+      transform(chunk: Buffer, _enc, done) {
+        onBytes(chunk.length);
+        done(null, chunk);
+      },
+    });
+    await pipeline(createReadStream(source), count, createWriteStream(target, { flags: "wx" }));
+    await utimes(target, s.atime, s.mtime);
+  }
+}
+
+/** Total size and newest change time of a file or folder. */
+async function folderSize(p: string, depth = 0): Promise<{ size: number; modified: number }> {
+  const s = await stat(p).catch(() => null);
+  if (!s) return { size: 0, modified: 0 };
+  if (!s.isDirectory() || depth > 32) return { size: s.size, modified: s.mtimeMs };
+  let size = 0;
+  let modified = s.mtimeMs;
+  for (const e of await readdir(p).catch(() => [] as string[])) {
+    const r = await folderSize(path.join(p, e), depth + 1);
+    size += r.size;
+    modified = Math.max(modified, r.modified);
+  }
+  return { size, modified };
+}
 
 export interface DownloadRecord {
   id: number;
@@ -17,9 +65,13 @@ export interface DownloadRecord {
   name: string;
   addedAt: string;
   status: "downloading" | "importing" | "imported" | "failed" | "removed";
+  /** While importing: which step and how far. */
+  progress?: ImportProgress | null;
   importedPath: string | null;
   importedAt: string | null;
   error: string | null;
+  /** Emulated system the download goes to; null for PC games. */
+  platform: string | null;
   /** Live numbers from the client when it still has the download. */
   live: ActiveDownload | null;
 }
@@ -34,6 +86,7 @@ interface Row {
   imported_path: string | null;
   imported_at: string | null;
   error: string | null;
+  platform: string | null;
 }
 
 /** Maps a client-side path (e.g. /data/torrents/games/X) to this container's view of it. */
@@ -51,6 +104,8 @@ const sanitize = (name: string) => name.replace(/[<>:"/\\|?*\x00-\x1f]/g, " ").r
  */
 export class DownloadManager {
   private reconciling: Promise<void> | null = null;
+  /** Imports in flight, by download id or "folder:<name>". */
+  private readonly progress = new Map<string, ImportProgress>();
 
   constructor(
     private readonly db: Db,
@@ -89,12 +144,13 @@ export class DownloadManager {
   }
 
   /** Sends a link (magnet, .torrent or .nzb URL) to the matching client and starts tracking it. */
-  async grab(input: { url: string; title: string; protocol: "torrent" | "usenet" }, userId: number | null): Promise<DownloadRecord> {
+  async grab(input: { url: string; title: string; protocol: "torrent" | "usenet"; platform?: string | null }, userId: number | null): Promise<DownloadRecord> {
     const clientName = input.protocol === "usenet" ? "sabnzbd" : "qbittorrent";
     const client = this.client(clientName);
+    const platform = input.platform && input.platform !== PC_PLATFORM ? platformFor(input.platform).id : null;
     const result = this.db
-      .prepare("INSERT INTO downloads (client, name, source_url, added_by, added_at) VALUES (?, ?, ?, ?, ?)")
-      .run(clientName, input.title, input.url, userId, now());
+      .prepare("INSERT INTO downloads (client, name, source_url, added_by, added_at, platform) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(clientName, input.title, input.url, userId, now(), platform);
     const id = Number(result.lastInsertRowid);
     try {
       const external = client instanceof QBittorrentClient ? await client.add(input.url, input.title, `gm-${id}`) : await client.add(input.url, input.title);
@@ -126,6 +182,8 @@ export class DownloadManager {
       importedPath: r.imported_path,
       importedAt: r.imported_at,
       error: r.error,
+      platform: r.platform ?? null,
+      progress: this.progress.get(String(r.id)) ?? null,
       live,
     };
   }
@@ -182,7 +240,83 @@ export class DownloadManager {
     return this.reconciling;
   }
 
+  // ---- Games already sitting in the downloads folder ------------------------------
+
+  /** Entries in the downloads folder, with whether each was imported. Newest first. */
+  async folderItems(): Promise<FolderItem[]> {
+    const dir = this.settings().import.folder;
+    if (!dir) return [];
+    const entries = await readdir(dir, { withFileTypes: true }).catch((err: Error) => {
+      throw new Error(`Can't read the downloads folder ${dir}: ${err.message}`);
+    });
+    const done = new Map(
+      (this.db.prepare("SELECT * FROM folder_imports").all() as Array<{ name: string; status: string; target: string | null; error: string | null }>).map((r) => [r.name, r]),
+    );
+    const items: FolderItem[] = [];
+    for (const e of entries) {
+      if (e.name.startsWith(".") || /\.(part|!qb|crdownload|tmp)$/i.test(e.name) || /^(_unpack|_failed|incomplete)/i.test(e.name)) continue;
+      if (!e.isDirectory() && !e.isFile()) continue;
+      const { size, modified } = await folderSize(path.join(dir, e.name));
+      const rec = done.get(e.name);
+      items.push({
+        name: e.name,
+        sizeBytes: size,
+        modifiedAt: new Date(modified).toISOString(),
+        // Still being written if anything in it changed in the last two minutes.
+        settling: Date.now() - modified < 120_000,
+        status: (rec?.status as FolderItem["status"]) ?? "new",
+        target: rec?.target ?? null,
+        error: rec?.error ?? null,
+        progress: this.progress.get(`folder:${e.name}`) ?? null,
+      });
+    }
+    return items.sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt));
+  }
+
+  /** Imports one entry of the downloads folder with the usual clean-up (unpack, strip junk, re-zip). */
+  async importFromFolder(name: string, platform: string | null = null): Promise<string> {
+    const s = this.settings();
+    if (!s.import.folder) throw new Error("Set the downloads folder first");
+    if (name.includes("/") || name.includes("\\") || name.startsWith(".")) throw new Error("Bad name");
+    const source = path.join(s.import.folder, name);
+    const sys = platform && platform !== PC_PLATFORM ? platformFor(platform).id : null;
+    // Copy unless the admin chose move: the client may still be seeding it.
+    const mode = s.import.mode === "move" ? "move" : "copy";
+    const id = 1_000_000_000 + Math.floor(Math.random() * 1_000_000_000);
+    const record = this.db.prepare(
+      "INSERT INTO folder_imports (name, status, target, error, at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET status = excluded.status, target = excluded.target, error = excluded.error, at = excluded.at",
+    );
+    record.run(name, "importing", null, null, now());
+    try {
+      const target = await this.importPath(source, mode, name, s.import.tidy, id, sys, `folder:${name}`);
+      record.run(name, "imported", target, null, now());
+      this.log.info({ name, target }, "Imported from the downloads folder");
+      void this.library.rescan();
+      return target;
+    } catch (err) {
+      record.run(name, "failed", null, (err as Error).message, now());
+      throw err;
+    }
+  }
+
+  /** Leaves an entry alone from now on (not a game, or already in the library). */
+  skipFolderItem(name: string): void {
+    this.db
+      .prepare("INSERT INTO folder_imports (name, status, at) VALUES (?, 'skipped', ?) ON CONFLICT(name) DO UPDATE SET status = 'skipped', at = excluded.at")
+      .run(name, now());
+  }
+
+  private async autoImportFolder(): Promise<void> {
+    const s = this.settings();
+    if (!s.import.folder || !s.import.autoImportFolder) return;
+    for (const item of await this.folderItems().catch(() => [])) {
+      if (item.status !== "new" || item.settling) continue;
+      await this.importFromFolder(item.name).catch((err: Error) => this.log.warn({ name: item.name, err: err.message }, "Folder import failed"));
+    }
+  }
+
   private async doReconcile(): Promise<void> {
+    await this.autoImportFolder();
     const pending = this.rows().filter((r) => r.status === "downloading");
     if (!pending.length) return;
     const live = await this.liveAll();
@@ -199,7 +333,7 @@ export class DownloadManager {
       if (!finished || settings.import.mode === "off" || !l.path) continue;
       try {
         this.db.prepare("UPDATE downloads SET status = 'importing' WHERE id = ?").run(r.id);
-        const target = await this.importPath(mapPath(l.path, settings.import.pathMappings), settings.import.mode, r.name, settings.import.tidy, r.id);
+        const target = await this.importPath(mapPath(l.path, settings.import.pathMappings), settings.import.mode, r.name, settings.import.tidy, r.id, r.platform, String(r.id));
         this.db.prepare("UPDATE downloads SET status = 'imported', imported_path = ?, imported_at = ?, error = NULL WHERE id = ?").run(target, now(), r.id);
         this.log.info({ name: r.name, target }, "Imported download into the library");
         imported = true;
@@ -214,24 +348,40 @@ export class DownloadManager {
     if (imported) await this.library.rescan();
   }
 
-  private async importPath(source: string, mode: "copy" | "move", releaseName: string, tidy: TidyOptions, id: number): Promise<string> {
+  private async importPath(source: string, mode: "copy" | "move", releaseName: string, tidy: TidyOptions, id: number, platform: string | null, key: string): Promise<string> {
+    const report: ProgressFn = (p) => this.progress.set(key, p);
+    try {
+      return await this.importWithProgress(source, mode, releaseName, tidy, id, platform, report);
+    } finally {
+      this.progress.delete(key);
+    }
+  }
+
+  private async importWithProgress(source: string, mode: "copy" | "move", releaseName: string, tidy: TidyOptions, id: number, platform: string | null, report: ProgressFn): Promise<string> {
     const s = await stat(source).catch(() => null);
     if (!s) throw new Error(`Finished download not found at ${source}; check the path mappings`);
+    // Emulated games go to their system's folder as plain files: emulators open ROMs and disc images directly.
+    const targetDir = platform ? path.join(this.library.gamesDir, "Emulation", platform) : this.library.gamesDir;
+    if (platform) {
+      await mkdir(targetDir, { recursive: true });
+      tidy = { ...tidy, repack: "folder" };
+    }
     const tidyOn = tidy.stripJunk || tidy.extract || tidy.repack === "zip";
-    if (!tidyOn) return this.place(source, path.join(this.library.gamesDir, sanitize(path.basename(source))), mode);
+    // A lone ROM or disc image needs no tidying; it sits next to the system's other games.
+    if (!tidyOn || (platform && s.isFile() && !/\.(zip|7z|rar)$/i.test(source))) return this.place(source, path.join(targetDir, sanitize(path.basename(source))), mode, report);
 
     // Work on a private copy in the games folder (hidden from scans), so seeding torrents stay intact.
     const staging = path.join(this.library.gamesDir, `.import-${id}`);
     await rm(staging, { recursive: true, force: true });
-    if (s.isDirectory()) await this.place(source, staging, mode);
+    if (s.isDirectory()) await this.place(source, staging, mode, report);
     else {
       await mkdir(staging, { recursive: true });
-      await this.place(source, path.join(staging, path.basename(source)), mode);
+      await this.place(source, path.join(staging, path.basename(source)), mode, report);
     }
     try {
-      const report = await tidyDownload(staging, releaseName || path.basename(source), this.library.gamesDir, tidy, await findServerSevenZip());
-      this.log.info({ name: releaseName, removed: report.removed, extracted: report.extracted, warnings: report.warnings }, "Tidied download");
-      return report.target;
+      const tidied = await tidyDownload(staging, releaseName || path.basename(source), targetDir, tidy, await findServerSevenZip(), report);
+      this.log.info({ name: releaseName, removed: tidied.removed, extracted: tidied.extracted, warnings: tidied.warnings }, "Tidied download");
+      return tidied.target;
     } catch (err) {
       await rm(staging, { recursive: true, force: true });
       throw err;
@@ -239,7 +389,7 @@ export class DownloadManager {
   }
 
   /** Moves or copies one file or folder to target, through a temporary name so half-copied games never show up. */
-  private async place(source: string, target: string, mode: "copy" | "move"): Promise<string> {
+  private async place(source: string, target: string, mode: "copy" | "move", report: ProgressFn = () => {}): Promise<string> {
     if (await stat(target).catch(() => null)) throw new Error(`${path.basename(target)} already exists in the games folder`);
     if (mode === "move") {
       try {
@@ -250,7 +400,18 @@ export class DownloadManager {
       }
     }
     const temp = `${target}.importing`;
-    await cp(source, temp, { recursive: true, errorOnExist: true });
+    const { size } = await folderSize(source);
+    let copied = 0;
+    report({ stage: "copying", percent: 0 });
+    try {
+      await copyTree(source, temp, (n) => {
+        copied += n;
+        report({ stage: "copying", percent: size ? Math.min(100, Math.floor((copied / size) * 100)) : null });
+      });
+    } catch (err) {
+      await rm(temp, { recursive: true, force: true });
+      throw err;
+    }
     await rename(temp, target);
     if (mode === "move") await rm(source, { recursive: true, force: true });
     return target;

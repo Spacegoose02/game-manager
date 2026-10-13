@@ -1,13 +1,17 @@
 import { createHash } from "node:crypto";
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
-import { archiveKindOf, setupKindOf, type GameFile, type GameSummary } from "@lootden/shared";
+import { archiveKindOf, PC_PLATFORM, platformFor, romTitle, setupKindOf, type GameFile, type GameSummary } from "@lootden/shared";
 
 /** What the scanner knows from disk alone; the library adds database and metadata fields. */
 export type ScannedGame = Pick<
   GameSummary,
-  "id" | "title" | "source" | "layout" | "sizeBytes" | "fileCount" | "packed" | "needsSetup" | "modifiedAt"
-> & { files: GameFile[] };
+  "id" | "title" | "source" | "layout" | "platform" | "sizeBytes" | "fileCount" | "packed" | "needsSetup" | "modifiedAt"
+> & {
+  files: GameFile[];
+  /** The game folder's (or file's) own "Date modified", which moves when a game is copied in. */
+  entryModifiedAt: string;
+};
 
 /** Files that are never part of a game (OS clutter, partial transfers). */
 const IGNORED = /^(\..*|thumbs\.db|desktop\.ini|.*\.(part|crdownload|!qb|tmp|importing))$/i;
@@ -47,19 +51,26 @@ async function walk(root: string, rel = ""): Promise<GameFile[]> {
   return out;
 }
 
-function summarize(id: string, source: string, layout: ScannedGame["layout"], files: GameFile[]): ScannedGame {
+/** Top-level folders that hold emulated systems instead of being a game. */
+export const EMULATION_FOLDERS = /^(emulation|roms)$/i;
+
+function summarize(id: string, source: string, layout: ScannedGame["layout"], files: GameFile[], platform: string, entryModifiedAt: string): ScannedGame {
   files.forEach((f, i) => (f.index = i));
   const newest = files.reduce((max, f) => (f.modifiedAt > max ? f.modifiedAt : max), "");
+  const name = path.posix.basename(source);
   return {
     id,
-    title: titleFromSource(source, layout === "archive"),
+    title: platform === PC_PLATFORM ? titleFromSource(name, layout === "archive") : romTitle(name, layout !== "folder") || name,
     source,
     layout,
+    platform,
     sizeBytes: files.reduce((sum, f) => sum + f.size, 0),
     fileCount: files.length,
     packed: files.some((f) => f.archive !== undefined),
-    needsSetup: setupKindOf(files),
+    // Emulators play disc images as they are; only PC discs and installers need setting up.
+    needsSetup: platform === PC_PLATFORM ? setupKindOf(files) : null,
     modifiedAt: newest || new Date(0).toISOString(),
+    entryModifiedAt,
     files,
   };
 }
@@ -70,35 +81,62 @@ function summarize(id: string, source: string, layout: ScannedGame["layout"], fi
  * Split archives at the root (Game.part1.rar, Game.part2.rar) belong in a folder.
  */
 export async function scanLibrary(gamesDir: string): Promise<ScannedGame[]> {
-  const entries = await readdir(gamesDir, { withFileTypes: true });
   const games: ScannedGame[] = [];
-  for (const entry of entries) {
+  for (const entry of await readdir(gamesDir, { withFileTypes: true })) {
     if (IGNORED.test(entry.name)) continue;
-    const full = path.join(gamesDir, entry.name);
-    try {
-      if (entry.isDirectory()) {
-        const files = await walk(full);
-        if (files.length === 0) continue;
-        games.push(summarize(gameIdFor(entry.name), entry.name, "folder", files));
-      } else if (entry.isFile() && archiveKindOf(entry.name)) {
-        const s = await stat(full);
-        games.push(
-          summarize(gameIdFor(entry.name), entry.name, "archive", [
-            { index: 0, path: entry.name, size: s.size, modifiedAt: s.mtime.toISOString(), archive: archiveKindOf(entry.name) },
-          ]),
-        );
-      }
-    } catch (err) {
-      // One unreadable folder should not take down the whole library.
-      console.warn(`Skipping ${entry.name}: ${(err as Error).message}`);
+    if (entry.isDirectory() && EMULATION_FOLDERS.test(entry.name)) {
+      games.push(...(await scanEmulation(gamesDir, entry.name)));
+      continue;
     }
+    const game = await scanEntry(gamesDir, entry.name, entry.isDirectory(), PC_PLATFORM);
+    if (game) games.push(game);
   }
   return games.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base" }));
 }
 
+/** Emulation/<platform>/<game>: every file or folder inside a platform folder is one game. */
+async function scanEmulation(gamesDir: string, folder: string): Promise<ScannedGame[]> {
+  const games: ScannedGame[] = [];
+  const systems = await readdir(path.join(gamesDir, folder), { withFileTypes: true }).catch(() => []);
+  for (const system of systems) {
+    if (!system.isDirectory() || IGNORED.test(system.name) || /^(bios|system|firmware)$/i.test(system.name)) continue;
+    const platform = platformFor(system.name).id;
+    const dir = `${folder}/${system.name}`;
+    const entries = await readdir(path.join(gamesDir, dir), { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (IGNORED.test(entry.name)) continue;
+      const game = await scanEntry(gamesDir, `${dir}/${entry.name}`, entry.isDirectory(), platform);
+      if (game) games.push(game);
+    }
+  }
+  return games;
+}
+
+async function scanEntry(gamesDir: string, source: string, isDir: boolean, platform: string): Promise<ScannedGame | null> {
+  const full = path.join(gamesDir, source);
+  const name = path.posix.basename(source);
+  try {
+    if (isDir) {
+      const files = await walk(full);
+      // Unpacked files keep the dates from inside the archive, so the folder's own date says when it arrived.
+      return files.length ? summarize(gameIdFor(source), source, "folder", files, platform, (await stat(full)).mtime.toISOString()) : null;
+    }
+    const archive = archiveKindOf(name);
+    // Loose files at the top are only games when they're archives; inside a platform folder any file is a ROM.
+    if (!archive && platform === PC_PLATFORM) return null;
+    const s = await stat(full);
+    if (!s.isFile()) return null;
+    return summarize(gameIdFor(source), source, archive ? "archive" : "file", [{ index: 0, path: name, size: s.size, modifiedAt: s.mtime.toISOString(), archive }], platform, s.mtime.toISOString());
+  } catch (err) {
+    // One unreadable folder should not take down the whole library.
+    console.warn(`Skipping ${source}: ${(err as Error).message}`);
+    return null;
+  }
+}
+
 /** Absolute path of a game file on disk, refusing anything that escapes the library root. */
 export function resolveGameFile(gamesDir: string, game: Pick<ScannedGame, "layout" | "source">, file: GameFile): string {
-  const base = game.layout === "folder" ? path.join(gamesDir, game.source) : gamesDir;
+  const base = game.layout === "folder" ? path.join(gamesDir, game.source) : path.join(gamesDir, path.posix.dirname(game.source));
   const full = path.resolve(base, file.path);
   const root = path.resolve(gamesDir) + path.sep;
   if (!full.startsWith(root)) throw new Error("Path escapes the games folder");

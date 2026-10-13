@@ -1,6 +1,9 @@
 import { Link } from "react-router-dom";
 import type { GameListing } from "@lootden/shared";
 
+/** The in-app page for a game that isn't in the library. */
+export const discoverPath = (l: Pick<GameListing, "provider" | "providerId">) => `/discover/${l.provider}/${l.providerId}`;
+
 export const listingDate = (l: GameListing) =>
   l.releaseDate ? new Date(`${l.releaseDate}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : (l.dateText ?? "TBA");
 
@@ -28,12 +31,10 @@ export function ListingCard({ item, action }: { item: GameListing; action?: Reac
         <Link to={`/games/${item.libraryId}`} className="listing-link">
           {body}
         </Link>
-      ) : item.url ? (
-        <a href={item.url} target="_blank" rel="noreferrer" className="listing-link">
-          {body}
-        </a>
       ) : (
-        <div className="listing-link">{body}</div>
+        <Link to={discoverPath(item)} className="listing-link">
+          {body}
+        </Link>
       )}
       {action}
     </div>
