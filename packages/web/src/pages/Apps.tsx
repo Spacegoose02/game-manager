@@ -34,7 +34,7 @@ export function Apps() {
           No downloads are hosted yet.{" "}
           {me?.role === "admin" ? (
             <>
-              Add them on the <Link to="/admin#apps">Admin page</Link>.
+              Add them in <Link to="/settings/content">Settings, News &amp; apps</Link>.
             </>
           ) : (
             "Ask the server admin to add them."

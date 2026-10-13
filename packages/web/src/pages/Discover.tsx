@@ -6,6 +6,7 @@ import { useAuth } from "../auth";
 import { FindDownloads } from "../components/FindDownloads";
 import { FreeGames } from "../components/FreeGames";
 import { ListingCard } from "../components/Listing";
+import { SourceReleases } from "../components/SourceReleases";
 
 /** Find games that aren't in the library yet; admins can send them straight to the downloaders. */
 export function Discover() {
@@ -109,6 +110,7 @@ export function Discover() {
           </p>
         </section>
       )}
+      <SourceReleases isAdmin={isAdmin} />
       </>}
     </div>
   );

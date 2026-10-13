@@ -91,8 +91,24 @@ const qs = (o: Record<string, string | number | boolean | undefined>) => {
   return s ? `?${s}` : "";
 };
 
+export interface ReleaseRules {
+  mustContain: string[];
+  mustNotContain: string[];
+  preferred: string[];
+  minSizeMb: number;
+  maxSizeMb: number;
+  minSeeders: number;
+  preferProtocol: "torrent" | "usenet" | "any";
+  blockedIndexers: string[];
+}
+
+export type AlertKind = "released" | "found" | "grabbed" | "imported" | "updates" | "flagged" | "sources" | "failed" | "test";
+
 export interface Connectors {
   qbittorrent: { url: string; username: string; password: string; category: string; savePath: string };
+  transmission: { url: string; username: string; password: string; category: string; savePath: string };
+  deluge: { url: string; password: string; category: string; savePath: string };
+  torrentClient: "qbittorrent" | "transmission" | "deluge";
   sabnzbd: { url: string; apiKey: string; category: string };
   prowlarr: { url: string; apiKey: string; categories: number[] };
   import: {
@@ -103,6 +119,128 @@ export interface Connectors {
     autoImportFolder: boolean;
   };
   itch: { apiKey: string };
+  rules: ReleaseRules;
+  wanted: { autoSearch: boolean; autoGrab: boolean; intervalHours: number; onlyReleased: boolean };
+  notify: { appriseUrl: string; appriseTargets: string } & Record<"released" | "found" | "grabbed" | "imported" | "updates" | "flagged" | "sources", boolean>;
+  scan: { clamav: "off" | "clamd" | "clamscan"; clamdHost: string; clamdPort: number; virusTotalKey: string; hold: boolean };
+  nexus: { apiKey: string };
+}
+
+export interface SourceConfig {
+  enabled: boolean;
+  baseUrl: string;
+  apiKey: string;
+  perMinute: number;
+  perHour: number;
+  extraHosts: string[];
+  onMyNetwork: boolean;
+}
+
+export interface ReleaseSourceView {
+  id: string;
+  name: string;
+  description: string;
+  needsKey: boolean;
+  defaultBaseUrl: string;
+  config: SourceConfig;
+  status: { lastRunAt: string | null; error: string | null; items: number; usedThisHour: number };
+}
+
+export interface SourceRelease {
+  id: string;
+  source: string;
+  sourceName: string;
+  title: string;
+  date: string | null;
+  platform: string | null;
+  url: string | null;
+  image?: string | null;
+  summary?: string | null;
+  details?: Record<string, string>;
+  seenAt: string;
+}
+
+export interface Alert {
+  id: number;
+  kind: AlertKind;
+  title: string;
+  body: string | null;
+  link: string | null;
+  createdAt: string;
+  read: boolean;
+}
+
+export interface ScanRecord {
+  id: number;
+  name: string;
+  path: string;
+  heldPath: string | null;
+  status: "clean" | "flagged" | "error" | "released" | "deleted";
+  findings: Array<{ file: string; threat: string; engine: string }>;
+  scannedAt: string;
+}
+
+export interface VersionCheck {
+  gameId: string;
+  current: string | null;
+  latest: string | null;
+  source: "gog" | "steam" | "itch" | null;
+  detail: string | null;
+  url: string | null;
+  behind: boolean;
+  checkedAt: string;
+}
+
+export const BACKLOG = ["backlog", "playing", "done", "shelved", "dropped", "wishlist"] as const;
+export type BacklogStatus = (typeof BACKLOG)[number];
+export const BACKLOG_LABELS: Record<BacklogStatus, string> = { backlog: "Backlog", playing: "Playing", done: "Finished", shelved: "On hold", dropped: "Dropped", wishlist: "Want to play" };
+
+export interface Journal {
+  gameId: string;
+  status: BacklogStatus | null;
+  rating: number | null;
+  notes: string;
+  entries: Array<{ id: number; text: string; createdAt: string }>;
+  updatedAt: string | null;
+}
+
+export interface TimeToBeat {
+  main: number | null;
+  normally: number | null;
+  completely: number | null;
+  count: number;
+}
+
+export interface NexusMod {
+  id: number;
+  name: string;
+  summary: string;
+  picture: string | null;
+  author: string;
+  endorsements: number;
+  url: string;
+}
+
+export interface LibraryStatsDetail {
+  gameCount: number;
+  totalBytes: number;
+  averageRating: number | null;
+  controller: { full: number; partial: number };
+  kidSafe: number;
+  platforms: Array<{ id: string; name: string; count: number; bytes: number }>;
+  genres: Array<{ name: string; count: number }>;
+  releaseYears: Array<{ from: number; count: number }>;
+  addedByMonth: Array<{ month: string; count: number }>;
+  playtime: Array<{ name: string; seconds: number }>;
+  mostPlayed: Array<{ id: string; title: string; seconds: number }>;
+  biggest: Array<{ id: string; title: string; bytes: number }>;
+  backlog: Record<BacklogStatus, number> | null;
+}
+
+export interface BacklogData {
+  items: Array<{ gameId: string; status: BacklogStatus; rating: number | null; updatedAt: string; game: GameSummary; playtimeSeconds: number }>;
+  counts: Record<BacklogStatus, number>;
+  unsorted: number;
 }
 
 export interface FolderItem {
@@ -147,6 +285,9 @@ export interface SearchResult {
   seeders: number | null;
   leechers: number | null;
   publishedAt: string | null;
+  allowed?: boolean;
+  reason?: string | null;
+  best?: boolean;
 }
 
 export interface LiveDownload {
@@ -190,6 +331,10 @@ export interface WishItem {
   sources: WishSource[];
   addedAt: string;
   libraryId: string | null;
+  monitored: boolean;
+  searchedAt: string | null;
+  found: { title: string; indexer: string; sizeBytes: number; protocol: "torrent" | "usenet"; seeders: number | null; url: string } | null;
+  downloadId: number | null;
 }
 export interface WishFeed {
   id: number;
@@ -201,7 +346,7 @@ export interface WishFeed {
 }
 export interface WishlistState {
   items: WishItem[];
-  steam: { steamId: string; profile: string; syncedAt: string | null; error: string | null; count: number } | null;
+  steam: { steamId: string; profile: string; syncedAt: string | null; error: string | null; count: number; autoSync?: boolean } | null;
   feeds: WishFeed[];
 }
 
@@ -341,7 +486,35 @@ export const api = {
   addWish: (title: string, url?: string) => call<WishlistState>("POST", "/api/wishlist", { title, url }),
   removeWish: (id: number) => call<WishlistState>("DELETE", `/api/wishlist/${id}`),
   syncWishlist: () => call<WishlistState>("POST", "/api/wishlist/sync"),
-  linkSteamWishlist: (profile: string) => call<WishlistState>("PUT", "/api/wishlist/steam", { profile }),
+  linkSteamWishlist: (profile: string, autoSync?: boolean) => call<WishlistState>("PUT", "/api/wishlist/steam", { profile, autoSync }),
+  setSteamAutoSync: (autoSync: boolean) => call<WishlistState>("PUT", "/api/wishlist/steam/auto", { autoSync }),
+  setMonitored: (id: number, monitored: boolean) => call<WishlistState>("PUT", `/api/wishlist/${id}`, { monitored }),
+  searchWanted: (id: number) => call<WishlistState & { found: WishItem["found"] }>("POST", `/api/wishlist/${id}/search`),
+  grabWanted: (id: number) => call<WishlistState>("POST", `/api/wishlist/${id}/grab`),
+  runWanted: () => call("POST", "/api/wanted/run"),
+
+  alerts: () => call<{ alerts: Alert[]; unread: number }>("GET", "/api/alerts"),
+  readAlerts: () => call("POST", "/api/alerts/read"),
+  testAlert: () => call<{ message: string }>("POST", "/api/alerts/test"),
+  scans: () => call<ScanRecord[]>("GET", "/api/scans"),
+  decideScan: (id: number, action: "release" | "delete") => call<ScanRecord[]>("POST", `/api/scans/${id}`, { action }),
+  testScanner: () => call<{ message: string }>("POST", "/api/scans/test"),
+  updatesBehind: () => call<Array<VersionCheck & { title: string }>>("GET", "/api/updates"),
+  version: (id: string) => call<VersionCheck | null>("GET", `/api/games/${id}/version`),
+  checkVersion: (id: string) => call<VersionCheck>("POST", `/api/games/${id}/version`),
+  journal: (id: string) => call<Journal>("GET", `/api/games/${id}/journal`),
+  saveJournal: (id: string, patch: { status?: BacklogStatus | null; rating?: number | null; notes?: string }) => call<Journal>("PUT", `/api/games/${id}/journal`, patch),
+  addJournalEntry: (id: string, text: string) => call<Journal>("POST", `/api/games/${id}/journal/entries`, { text }),
+  deleteJournalEntry: (entryId: number) => call("DELETE", `/api/journal/entries/${entryId}`),
+  backlog: () => call<BacklogData>("GET", "/api/backlog"),
+  roulette: (status = "backlog", controller = false) => call<{ game: GameSummary; from: string; poolSize: number }>("GET", `/api/backlog/roulette${qs({ status, controller: controller ? "1" : undefined })}`),
+  timeToBeat: (id: string) => call<TimeToBeat | null>("GET", `/api/games/${id}/time-to-beat`),
+  mods: (id: string) => call<{ domain: string | null; mods: NexusMod[] }>("GET", `/api/games/${id}/mods`),
+  sources: () => call<ReleaseSourceView[]>("GET", "/api/sources"),
+  saveSource: (id: string, c: Partial<SourceConfig>) => call<ReleaseSourceView>("PUT", `/api/sources/${id}`, c),
+  testSource: (id: string) => call<{ message: string; sources: ReleaseSourceView[] }>("POST", `/api/sources/${id}/test`),
+  sourceReleases: (limit = 40) => call<SourceRelease[]>("GET", `/api/sources/latest${qs({ limit: String(limit) })}`),
+  libraryStats: () => call<LibraryStatsDetail>("GET", "/api/stats/library"),
   addWishFeed: (url: string, name?: string) => call<WishlistState>("POST", "/api/wishlist/feeds", { url, name }),
   removeWishFeed: (id: number) => call<WishlistState>("DELETE", `/api/wishlist/feeds/${id}`),
   discover: () => call<{ recent: ListingResult }>("GET", "/api/discover"),

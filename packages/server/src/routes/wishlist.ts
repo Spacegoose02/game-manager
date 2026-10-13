@@ -37,9 +37,9 @@ export function wishlistRoutes(app: FastifyInstance, ctx: AppContext) {
     return state();
   });
 
-  app.put<{ Body: { profile?: string } }>("/api/wishlist/steam", async (req) => {
+  app.put<{ Body: { profile?: string; autoSync?: boolean } }>("/api/wishlist/steam", async (req) => {
     requireAdmin(req);
-    await fail(() => ctx.wishlist.linkSteam(String(req.body?.profile ?? "")));
+    await fail(() => ctx.wishlist.linkSteam(String(req.body?.profile ?? ""), req.body?.autoSync));
     return state();
   });
   app.post<{ Body: { url?: string; name?: string } }>("/api/wishlist/feeds", async (req) => {

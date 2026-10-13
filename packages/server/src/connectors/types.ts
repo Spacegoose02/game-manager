@@ -1,5 +1,7 @@
+import type { TorrentPayload } from "./torrent.js";
+
 export interface ActiveDownload {
-  client: "qbittorrent" | "sabnzbd";
+  client: "qbittorrent" | "transmission" | "deluge" | "sabnzbd";
   /** Torrent hash or SABnzbd nzo id. */
   id: string;
   name: string;
@@ -22,3 +24,12 @@ export interface DownloadClient {
   resume(id: string): Promise<void>;
   remove(id: string, deleteFiles: boolean): Promise<void>;
 }
+
+/** A torrent client: takes a magnet or a .torrent file and reports the info hash it's tracked by. */
+export interface TorrentClient extends DownloadClient {
+  readonly name: "qbittorrent" | "transmission" | "deluge";
+  addTorrent(payload: TorrentPayload, tag: string): Promise<string>;
+}
+
+/** How long to wait for a client to show a torrent it accepted (GM_TORRENT_VERIFY_MS for tests). */
+export const verifyDelay = () => Number(process.env.GM_TORRENT_VERIFY_MS ?? 1000);

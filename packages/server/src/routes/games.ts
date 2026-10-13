@@ -88,6 +88,11 @@ export function gameRoutes(app: FastifyInstance, ctx: AppContext) {
     }
     // Disc images and installers wait for an admin to install them once in the app and upload the result.
     if (p.role === "admin") add("setup", "Needs setting up", all.filter((g) => g.needsSetup));
+    // Copies that are behind GOG, itch.io or Steam (the daily update check).
+    if (p.role === "admin") {
+      const behind = new Set(ctx.versions.behind().map((c) => c.gameId));
+      add("updates", "Updates available", all.filter((g) => behind.has(g.id)));
+    }
     add("recent", "Recently added", ctx.library.list({ kidSafe, platform: PC_PLATFORM, sort: "added", order: "desc", limit: 20 }));
     add("emulation", "New on the Emulation shelf", ctx.library.list({ kidSafe, platform: "emulated", sort: "added", order: "desc", limit: 20 }));
     add("top", "Top rated", all.filter((g) => g.rating != null).sort((a, b) => b.rating! - a.rating!));

@@ -36,8 +36,18 @@ import { GameUpdates } from "./news/updates.js";
 import { FreeGames } from "./news/freegames.js";
 import { loadConnectorSettings } from "./connectors/settings.js";
 import { emulationRoutes } from "./routes/emulation.js";
+import { extraRoutes } from "./routes/extras.js";
+import { Notifier } from "./alerts/notifier.js";
+import { Scanner } from "./connectors/scan.js";
+import { WantedService } from "./news/wanted.js";
+import { VersionChecker } from "./news/version-check.js";
+import { JournalStore } from "./users/journal.js";
+import { NexusMods } from "./news/nexus.js";
+import { timeToBeat } from "./metadata/time-to-beat.js";
+import { SourceRegistry } from "./sources/registry.js";
+import { sourceRoutes } from "./routes/sources.js";
 
-export const VERSION = "0.5.0";
+export const VERSION = "0.6.0";
 
 /** Routes reachable without signing in. */
 const PUBLIC = [/^\/api\/health$/, /^\/api\/auth\//, /^\/api\/avatars\//];
@@ -57,6 +67,21 @@ export function buildContext(config: ServerConfig, db: Db, log: Log, opts: Build
   // Applies keys and sign-on settings saved in the UI on top of the environment.
   const integrations = new Integrations(db, config);
   const metadata = new MetadataService(db, library, config.dataDir, config, log, opts.fetchImpl);
+  const settings = () => loadConnectorSettings(db);
+  const updates = new GameUpdates(opts.fetchImpl);
+  const wishlist = new WishlistService(db, library, opts.fetchImpl);
+  const downloads = new DownloadManager(db, library, log, opts.fetchImpl);
+  const notifier = new Notifier(db, () => settings().notify, () => config.publicUrl ?? "", opts.fetchImpl, log);
+  const scanner = new Scanner(db, config.gamesDir, () => settings().scan, opts.fetchImpl);
+  // Imports are scanned before they join the library; flagged ones wait in .held/ for a decision.
+  downloads.afterImport = async (target, name) => {
+    const r = await scanner.check(target, name);
+    if (r.error) log.warn({ name, error: r.error }, "Virus scan failed; imported anyway");
+    if (r.findings.length) await notifier.send("flagged", `${name} was flagged`, r.findings.map((f) => `${f.threat} in ${f.file}`).join("\n"), "/downloads");
+    else if (r.path) await notifier.send("imported", `${name} is in the library`, null, "/library");
+    return r.path;
+  };
+  downloads.onEvent = (e) => void notifier.send(e.kind, e.kind === "grabbed" ? `Sent ${e.title} to the download client` : `Couldn't download ${e.title}`, e.message ?? null, "/downloads");
   return {
     config,
     db,
@@ -66,16 +91,24 @@ export function buildContext(config: ServerConfig, db: Db, log: Log, opts: Build
     clients: new ClientDownloads(config.dataDir, opts.fetchImpl),
     saves: new SaveStore(db, config.dataDir),
     bios: new BiosStore(db, config.dataDir),
-    updates: new GameUpdates(opts.fetchImpl),
-    freeGames: new FreeGames(opts.fetchImpl, () => loadConnectorSettings(db).itch.apiKey),
+    updates,
+    freeGames: new FreeGames(opts.fetchImpl, () => settings().itch.apiKey),
     auth: new AuthService(db, users, config),
     oidc: new OidcService(config, users),
     metadata,
     calendar: new ReleaseCalendar(metadata, library, opts.fetchImpl),
-    wishlist: new WishlistService(db, library, opts.fetchImpl),
+    wishlist,
     videos: new VideoService(db, opts.fetchImpl),
     news: new NewsService(db, opts.fetchImpl),
-    downloads: new DownloadManager(db, library, log, opts.fetchImpl),
+    downloads,
+    notifier,
+    scanner,
+    wanted: new WantedService(db, wishlist, downloads, notifier),
+    versions: new VersionChecker(db, library, updates, notifier, () => settings().itch.apiKey, opts.fetchImpl),
+    journal: new JournalStore(db),
+    nexus: new NexusMods(() => settings().nexus.apiKey, opts.fetchImpl),
+    sources: new SourceRegistry(db, wishlist, notifier, opts.fetchImpl),
+    timeToBeat: timeToBeat(metadata.igdb),
   };
 }
 
@@ -137,6 +170,8 @@ export function buildApp(config: ServerConfig, db: Db, opts: BuildOptions = {}):
   saveRoutes(app, ctx);
   discoverRoutes(app, ctx);
   wishlistRoutes(app, ctx);
+  extraRoutes(app, ctx);
+  sourceRoutes(app, ctx);
 
   const webDir = opts.webDir;
   if (webDir && existsSync(path.join(webDir, "index.html"))) {

@@ -187,6 +187,99 @@ const MIGRATIONS: string[] = [
     created_at TEXT NOT NULL
   );
   `,
+  `
+  -- Transmission and Deluge downloads: the client check only allowed qBittorrent and SABnzbd.
+  CREATE TABLE downloads_new (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client TEXT NOT NULL CHECK (client IN ('qbittorrent', 'transmission', 'deluge', 'sabnzbd')),
+    external_id TEXT,
+    name TEXT NOT NULL,
+    source_url TEXT,
+    added_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    added_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'downloading',
+    imported_path TEXT,
+    imported_at TEXT,
+    error TEXT,
+    platform TEXT
+  );
+  INSERT INTO downloads_new (id, client, external_id, name, source_url, added_by, added_at, status, imported_path, imported_at, error, platform)
+    SELECT id, client, external_id, name, source_url, added_by, added_at, status, imported_path, imported_at, error, platform FROM downloads;
+  DROP TABLE downloads;
+  ALTER TABLE downloads_new RENAME TO downloads;
+  CREATE INDEX downloads_status ON downloads(status);
+
+  -- Wanted list: wishlist games searched for on a schedule.
+  ALTER TABLE wishlist ADD COLUMN monitored INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE wishlist ADD COLUMN searched_at TEXT;
+  ALTER TABLE wishlist ADD COLUMN found TEXT;
+  ALTER TABLE wishlist ADD COLUMN download_id INTEGER;
+  ALTER TABLE wishlist ADD COLUMN released_notified INTEGER NOT NULL DEFAULT 0;
+  -- Alerts shown in the web UI (and sent through Apprise).
+  CREATE TABLE notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT,
+    link TEXT,
+    created_at TEXT NOT NULL,
+    read_at TEXT
+  );
+  -- Virus scan results; flagged imports wait in .held/ until an admin decides.
+  CREATE TABLE scans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    path TEXT NOT NULL,
+    held_path TEXT,
+    status TEXT NOT NULL,
+    findings TEXT NOT NULL DEFAULT '[]',
+    scanned_at TEXT NOT NULL
+  );
+  -- Newer versions found for library games.
+  CREATE TABLE game_updates (
+    game_id TEXT PRIMARY KEY,
+    current TEXT,
+    latest TEXT,
+    source TEXT,
+    detail TEXT,
+    url TEXT,
+    behind INTEGER NOT NULL DEFAULT 0,
+    checked_at TEXT NOT NULL
+  );
+  -- Each profile's backlog status, notes and play journal per game.
+  CREATE TABLE journal (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    game_id TEXT NOT NULL,
+    status TEXT,
+    rating INTEGER,
+    notes TEXT,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, game_id)
+  );
+  CREATE TABLE journal_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    game_id TEXT NOT NULL,
+    text TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  `,
+  `
+  -- Releases seen in the admin's release sources (Settings, Sources).
+  CREATE TABLE source_items (
+    id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    title TEXT NOT NULL,
+    date TEXT,
+    platform TEXT,
+    url TEXT,
+    image TEXT,
+    summary TEXT,
+    details TEXT,
+    seen_at TEXT NOT NULL
+  );
+  CREATE INDEX source_items_source ON source_items(source, seen_at);
+  `,
 ];
 
 export function openDatabase(file: string): Db {

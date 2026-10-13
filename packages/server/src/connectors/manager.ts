@@ -8,11 +8,15 @@ import type { Library } from "../catalog/library.js";
 import { now, type Db } from "../db/database.js";
 import type { FetchLike } from "../metadata/http.js";
 import { ProwlarrClient, type SearchResult } from "./prowlarr.js";
+import { DelugeClient } from "./deluge.js";
 import { QBittorrentClient } from "./qbittorrent.js";
+import { resolveTorrent } from "./torrent.js";
+import { TransmissionClient } from "./transmission.js";
 import { SabnzbdClient } from "./sabnzbd.js";
 import { loadConnectorSettings, type ConnectorSettings } from "./settings.js";
 import { findServerSevenZip, tidyDownload, type ImportProgress, type ProgressFn, type TidyOptions } from "./tidy.js";
-import type { ActiveDownload, DownloadClient } from "./types.js";
+import type { ActiveDownload, DownloadClient, TorrentClient } from "./types.js";
+import { judgeRelease, type Judged } from "./rules.js";
 
 export interface FolderItem {
   name: string;
@@ -114,13 +118,34 @@ export class DownloadManager {
     private readonly fetchImpl: FetchLike = fetch,
   ) {}
 
+  /**
+   * Runs on every finished import before it counts as in the library (virus scan, alerts).
+   * Returns where the game ended up, or null when it was held back for review.
+   */
+  afterImport: (target: string, name: string) => Promise<string | null> = async (t) => t;
+  /** Told about grabs and failures, for alerts. */
+  onEvent: (e: { kind: "grabbed" | "failed"; title: string; message?: string }) => void = () => {};
+
   settings(): ConnectorSettings {
     return loadConnectorSettings(this.db);
   }
 
   clients(): DownloadClient[] {
     const s = this.settings();
-    return [new QBittorrentClient(s.qbittorrent, this.fetchImpl), new SabnzbdClient(s.sabnzbd, this.fetchImpl)];
+    return [
+      new QBittorrentClient(s.qbittorrent, this.fetchImpl),
+      new TransmissionClient(s.transmission, this.fetchImpl),
+      new DelugeClient(s.deluge, this.fetchImpl),
+      new SabnzbdClient(s.sabnzbd, this.fetchImpl),
+    ];
+  }
+
+  /** The torrent client chosen in Settings. */
+  torrentClient(): TorrentClient {
+    const name = this.settings().torrentClient;
+    const c = this.clients().find((x) => x.name === name) as TorrentClient | undefined;
+    if (!c?.configured) throw new Error(`${name === "qbittorrent" ? "qBittorrent" : name === "transmission" ? "Transmission" : "Deluge"} is not set up; add it under Settings, Download clients`);
+    return c;
   }
 
   client(name: string): DownloadClient {
@@ -133,30 +158,37 @@ export class DownloadManager {
     return new ProwlarrClient(this.settings().prowlarr, this.fetchImpl);
   }
 
-  async test(which: "qbittorrent" | "sabnzbd" | "prowlarr"): Promise<string> {
+  async test(which: string): Promise<string> {
     return which === "prowlarr" ? this.prowlarr().test() : this.client(which).test();
   }
 
-  async search(query: string): Promise<SearchResult[]> {
+  /** Prowlarr results, each judged by the release rules; the best allowed one is marked. */
+  async search(query: string, wantedTitle?: string): Promise<Array<SearchResult & Judged>> {
     const p = this.prowlarr();
     if (!p.configured) throw new Error("Prowlarr is not set up");
-    return p.search(query);
+    const rules = this.settings().rules;
+    const judged = (await p.search(query)).map((r) => ({ ...r, ...judgeRelease(r, rules, wantedTitle) }));
+    const best = judged.filter((r) => r.allowed).sort((a, b) => b.score - a.score)[0];
+    return judged.map((r) => ({ ...r, best: r === best }));
   }
 
   /** Sends a link (magnet, .torrent or .nzb URL) to the matching client and starts tracking it. */
   async grab(input: { url: string; title: string; protocol: "torrent" | "usenet"; platform?: string | null }, userId: number | null): Promise<DownloadRecord> {
-    const clientName = input.protocol === "usenet" ? "sabnzbd" : "qbittorrent";
-    const client = this.client(clientName);
+    const client = input.protocol === "usenet" ? this.client("sabnzbd") : this.torrentClient();
     const platform = input.platform && input.platform !== PC_PLATFORM ? platformFor(input.platform).id : null;
     const result = this.db
       .prepare("INSERT INTO downloads (client, name, source_url, added_by, added_at, platform) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(clientName, input.title, input.url, userId, now(), platform);
+      .run(client.name, input.title, input.url, userId, now(), platform);
     const id = Number(result.lastInsertRowid);
     try {
-      const external = client instanceof QBittorrentClient ? await client.add(input.url, input.title, `gm-${id}`) : await client.add(input.url, input.title);
+      // Torrents are fetched here and handed over as a file or magnet, then checked: clients
+      // can't always reach Prowlarr's links, and qBittorrent drops those without an error.
+      const external = input.protocol === "torrent" ? await (client as TorrentClient).addTorrent(await resolveTorrent(input.url, this.fetchImpl), `gm-${id}`) : await client.add(input.url, input.title);
       this.db.prepare("UPDATE downloads SET external_id = ? WHERE id = ?").run(external, id);
+      this.onEvent({ kind: "grabbed", title: input.title });
     } catch (err) {
       this.db.prepare("UPDATE downloads SET status = 'failed', error = ? WHERE id = ?").run((err as Error).message, id);
+      this.onEvent({ kind: "failed", title: input.title, message: (err as Error).message });
       throw err;
     }
     return this.get(id)!;
@@ -192,7 +224,7 @@ export class DownloadManager {
   private match(r: Row, live: Array<ActiveDownload & { tags?: string }>): ActiveDownload | null {
     if (!r.external_id) return null;
     return (
-      live.find((d) => d.client === r.client && (d.id === r.external_id || (d.tags ?? "").split(/,\s*/).includes(r.external_id!))) ?? null
+      live.find((d) => d.client === r.client && (d.id.toLowerCase() === r.external_id!.toLowerCase() || (d.tags ?? "").split(/,\s*/).includes(r.external_id!))) ?? null
     );
   }
 
@@ -288,7 +320,12 @@ export class DownloadManager {
     );
     record.run(name, "importing", null, null, now());
     try {
-      const target = await this.importPath(source, mode, name, s.import.tidy, id, sys, `folder:${name}`);
+      const imported = await this.importPath(source, mode, name, s.import.tidy, id, sys, `folder:${name}`);
+      const target = await this.afterImport(imported, name);
+      if (!target) {
+        record.run(name, "failed", imported, "Held for review: the virus scan flagged it (see Downloads, Held for review)", now());
+        throw new Error("The virus scan flagged this download; it's held for review on the Downloads page");
+      }
       record.run(name, "imported", target, null, now());
       this.log.info({ name, target }, "Imported from the downloads folder");
       void this.library.rescan();
@@ -333,7 +370,12 @@ export class DownloadManager {
       if (!finished || settings.import.mode === "off" || !l.path) continue;
       try {
         this.db.prepare("UPDATE downloads SET status = 'importing' WHERE id = ?").run(r.id);
-        const target = await this.importPath(mapPath(l.path, settings.import.pathMappings), settings.import.mode, r.name, settings.import.tidy, r.id, r.platform, String(r.id));
+        const placed = await this.importPath(mapPath(l.path, settings.import.pathMappings), settings.import.mode, r.name, settings.import.tidy, r.id, r.platform, String(r.id));
+        const target = await this.afterImport(placed, r.name);
+        if (!target) {
+          this.db.prepare("UPDATE downloads SET status = 'failed', error = ? WHERE id = ?").run("Held for review: the virus scan flagged it", r.id);
+          continue;
+        }
         this.db.prepare("UPDATE downloads SET status = 'imported', imported_path = ?, imported_at = ?, error = NULL WHERE id = ?").run(target, now(), r.id);
         this.log.info({ name: r.name, target }, "Imported download into the library");
         imported = true;

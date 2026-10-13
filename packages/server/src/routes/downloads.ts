@@ -24,9 +24,9 @@ export function downloadRoutes(app: FastifyInstance, ctx: AppContext) {
     return wrap(async () => maskedConnectorSettings(saveConnectorSettings(ctx.db, req.body ?? {})));
   });
 
-  app.post<{ Params: { name: "qbittorrent" | "sabnzbd" | "prowlarr" } }>("/api/connectors/:name/test", async (req) => {
+  app.post<{ Params: { name: string } }>("/api/connectors/:name/test", async (req) => {
     requireAdmin(req);
-    if (!["qbittorrent", "sabnzbd", "prowlarr"].includes(req.params.name)) throw new HttpProblem(404, "Unknown connector");
+    if (!["qbittorrent", "transmission", "deluge", "sabnzbd", "prowlarr"].includes(req.params.name)) throw new HttpProblem(404, "Unknown connector");
     return wrap(async () => ({ ok: true, message: await dm.test(req.params.name) }));
   });
 

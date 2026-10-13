@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import type { GameSummary } from "@lootden/shared";
 import { api } from "../api";
 import { GameGrid } from "../components/GameCard";
+import { Backlog, Stats } from "../components/LibraryViews";
 
 const SORTS = [
   ["title", "Title"],
@@ -13,6 +14,30 @@ const SORTS = [
 ] as const;
 
 export function Library() {
+  const [params, setParams] = useSearchParams();
+  const tab = params.get("tab") ?? "all";
+  const go = (t: string) => setParams(t === "all" ? {} : { tab: t }, { replace: true });
+  return (
+    <>
+      <div className="segmented library-tabs" role="tablist" aria-label="Library view">
+        {(
+          [
+            ["all", "All games"],
+            ["backlog", "Backlog"],
+            ["stats", "Stats"],
+          ] as const
+        ).map(([t, label]) => (
+          <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "active" : ""} onClick={() => go(t)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === "backlog" ? <Backlog /> : tab === "stats" ? <Stats /> : <AllGames />}
+    </>
+  );
+}
+
+function AllGames() {
   const [params, setParams] = useSearchParams();
   const [games, setGames] = useState<GameSummary[] | null>(null);
   const [genres, setGenres] = useState<Array<{ name: string; count: number }>>([]);

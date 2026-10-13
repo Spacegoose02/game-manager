@@ -4,11 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import { saveConnectorSettings } from "../src/connectors/settings.js";
-import { parseEpic, parseGog, parseItchFeed } from "../src/news/freegames.js";
+import { parseEpic, parseGog, parseItchFeed, pickItchUpload } from "../src/news/freegames.js";
 import { steamMarkupToText } from "../src/news/updates.js";
 import { makeApp, makeLibrary } from "./helpers.js";
 
 let root: string;
+process.env.GM_ITCH_GAP_MS = "5";
 before(async () => {
   root = await makeLibrary();
 });
@@ -95,9 +96,52 @@ describe("free games, update notes and the downloads folder", () => {
     saveConnectorSettings(ctx.db, { itch: { apiKey: "itch-key" } });
     const added = await app.inject({ method: "POST", url: "/api/discover/free/itch", headers, payload: { url: "https://maker.itch.io/tiny-quest" } });
     assert.equal(added.statusCode, 200, added.body);
-    assert.deepEqual(await readdir(path.join(root, "Tiny Quest")), ["TinyQuest-win.zip"]);
+    assert.deepEqual((await readdir(path.join(root, "Tiny Quest"))).sort(), [".itch.json", "TinyQuest-win.zip"]);
     assert.ok(ctx.library.list({ search: "tiny quest" }).length === 1);
     await rm(path.join(root, "Tiny Quest"), { recursive: true });
+  });
+
+  it("finds itch.io downloads tagged by traits or only by file name, and says why when there are none", () => {
+    const pick = (uploads: Parameters<typeof pickItchUpload>[0]) => pickItchUpload(uploads);
+    // The current API lists platforms as traits rather than p_windows flags.
+    assert.equal(pick([{ id: 1, filename: "OurLife-mac.zip", traits: ["p_osx"] }, { id: 2, filename: "OurLife-pc.zip", traits: ["p_windows"], type: "default" }]).upload?.id, 2);
+    // Untagged uploads go by name; a demo only counts when there's nothing else.
+    assert.equal(pick([{ id: 3, filename: "HoloCure_demo.zip", traits: ["p_windows", "demo"] }, { id: 4, filename: "HoloCure.exe" }]).upload?.id, 4);
+    assert.equal(pick([{ id: 5, filename: "game.zip" }]).upload?.id, 5);
+    assert.equal(pick([{ id: 6, filename: "Game-Linux.tar.gz" }]).upload?.id, 6);
+    assert.match(pick([]).why, /no downloads for this game/);
+    assert.match(pick([{ id: 7, filename: "index.zip", type: "html" }]).why, /browser-only/);
+    assert.match(pick([{ id: 8, filename: "Game.dmg", traits: ["p_osx"] }, { id: 9, filename: "game.apk" }]).why, /only has Mac and Android/);
+  });
+
+  it("waits and retries when itch.io rate-limits, then explains if it keeps saying no", async () => {
+    let calls = 0;
+    let limited = 2;
+    const fetchImpl = (async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      calls++;
+      if (url.hostname === "fan.itch.io") {
+        if (limited-- > 0) return new Response("slow down", { status: 429, headers: { "retry-after": "0" } });
+        return new Response('<meta property="og:title" content="Holo Fan"><meta name="itch:path" content="games/77">');
+      }
+      if (url.pathname === "/games/77/uploads") return Response.json({ uploads: [{ id: 1, filename: "HoloFan.zip", traits: ["p_windows"] }] });
+      if (url.pathname === "/games/78/uploads") return new Response("no", { status: 429 });
+      if (url.pathname === "/uploads/1/download") return new Response("zip");
+      return new Response("nope", { status: 404 });
+    }) as typeof fetch;
+    const { app, ctx } = await makeApp(root, { apiToken: "svc" }, { fetchImpl });
+    saveConnectorSettings(ctx.db, { itch: { apiKey: "k" } });
+    const headers = { authorization: "Bearer svc" };
+    const ok = await app.inject({ method: "POST", url: "/api/discover/free/itch", headers, payload: { url: "https://fan.itch.io/holo" } });
+    assert.equal(ok.statusCode, 200, ok.body);
+    assert.equal(calls, 5);
+    await rm(path.join(root, "Holo Fan"), { recursive: true });
+    const stuck = (async (input: string | URL | Request) =>
+      String(input).includes("/games/78/") ? new Response("no", { status: 429 }) : new Response('<meta name="itch:path" content="games/78">')) as typeof fetch;
+    const two = await makeApp(root, { apiToken: "svc" }, { fetchImpl: stuck });
+    saveConnectorSettings(two.ctx.db, { itch: { apiKey: "k" } });
+    const res = await two.app.inject({ method: "POST", url: "/api/discover/free/itch", headers, payload: { url: "https://other.itch.io/game" } });
+    assert.match(res.json().error, /Try again in a minute/);
   });
 
   it("turns Steam announcement markup into readable text", () => {

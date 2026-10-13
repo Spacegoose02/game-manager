@@ -10,6 +10,7 @@ import { DesktopInstall } from "../components/DesktopInstall";
 import { SavesPanel } from "../components/SavesPanel";
 import { UpdatesPanel } from "../components/UpdatesPanel";
 import { PreparePanel } from "../components/PreparePanel";
+import { JournalPanel, ModsPanel, VersionBanner } from "../components/GameExtras";
 import { desktop } from "../desktop";
 
 export function GameDetail() {
@@ -41,6 +42,7 @@ export function GameDetail() {
             {[game.releaseYear, game.genres.join(", "), formatBytes(game.sizeBytes)].filter(Boolean).join(" · ")}
           </p>
           <Badges game={game} />
+          {game.platform === "pc" && <VersionBanner gameId={game.id} isAdmin={me?.role === "admin"} />}
           {m?.ageRatings.length ? (
             <p className="muted small">Age ratings: {m.ageRatings.map((r) => `${r.organization} ${r.rating}`).join(", ")}</p>
           ) : null}
@@ -81,6 +83,8 @@ export function GameDetail() {
         </div>
       </div>
 
+      {me?.user && <JournalPanel gameId={game.id} />}
+
       {m?.screenshots.length ? (
         <section className="row">
           <h2>Screenshots</h2>
@@ -114,6 +118,8 @@ export function GameDetail() {
       </section>
 
       <UpdatesPanel gameId={game.id} />
+
+      {game.platform === "pc" && <ModsPanel gameId={game.id} />}
 
       <PreparePanel game={game} />
 

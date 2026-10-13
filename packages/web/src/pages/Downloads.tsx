@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useEffect, useState, type FormEvent } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { PLATFORMS } from "@lootden/shared";
-import { api, formatBytes, type Connectors, type DownloadRecord, type FolderItem, type ImportProgress, type LiveDownload, type SearchResult } from "../api";
+import { api, formatBytes, type DownloadRecord, type ScanRecord, type FolderItem, type ImportProgress, type LiveDownload, type SearchResult } from "../api";
 import { DownloadResults } from "../components/DownloadResults";
 
 const eta = (s: number | null) => (s == null ? "" : s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(1)} h`);
@@ -13,7 +13,6 @@ export function Downloads() {
   const [list, setList] = useState<{ downloads: DownloadRecord[]; other: LiveDownload[] }>({ downloads: [], other: [] });
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
 
   const load = () => api.downloads().then(setList, (e: Error) => setMsg(e.message));
   useEffect(() => {
@@ -51,12 +50,12 @@ export function Downloads() {
     <div className="downloads">
       <div className="inline" style={{ justifyContent: "space-between" }}>
         <h1>Downloads</h1>
-        <button className="secondary" onClick={() => setShowSettings(!showSettings)}>
-          {showSettings ? "Hide connections" : "Connections"}
-        </button>
+        <Link className="button secondary" to="/settings/downloads">
+          Download settings
+        </Link>
       </div>
       {msg && <p className="notice">{msg}</p>}
-      {showSettings && <ConnectorSettings onSaved={(m) => setMsg(m)} />}
+      <HeldForReview onMessage={setMsg} />
 
       <form className="panel inline" onSubmit={search}>
         <input type="search" placeholder="Search your Prowlarr indexers (usenet and torrent)" value={query} onChange={(e) => setQuery(e.target.value)} style={{ flex: 1 }} />
@@ -68,7 +67,7 @@ export function Downloads() {
       {results && (
         <section className="panel">
           <h2>Results</h2>
-          <DownloadResults results={results} onGrab={(r, platform) => act(() => api.grab({ url: r.downloadUrl, title: r.title, protocol: r.protocol, platform }), `Sent "${r.title}" to ${r.protocol === "usenet" ? "SABnzbd" : "qBittorrent"}`)} busy={busy} />
+          <DownloadResults results={results} onGrab={(r, platform) => act(() => api.grab({ url: r.downloadUrl, title: r.title, protocol: r.protocol, platform }), `Sent "${r.title}" to ${r.protocol === "usenet" ? "SABnzbd" : "the torrent client"}`)} busy={busy} />
         </section>
       )}
 
@@ -124,125 +123,57 @@ export function Downloads() {
   );
 }
 
-function ConnectorSettings({ onSaved }: { onSaved: (m: string) => void }) {
-  const [c, setC] = useState<Connectors | null>(null);
-  const [mapping, setMapping] = useState("");
-  // Load once. The page around this form refreshes the queue every few seconds; reloading
-  // here on each of those renders used to wipe whatever was being typed.
-  const report = useRef(onSaved);
-  report.current = onSaved;
+/** Imports the virus scan flagged, waiting for an admin to release or delete them. */
+function HeldForReview({ onMessage }: { onMessage: (m: string) => void }) {
+  const [scans, setScans] = useState<ScanRecord[]>([]);
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
-    api.connectors().then((x) => {
-      setC(x);
-      setMapping(x.import.pathMappings.map((m) => `${m.from} => ${m.to}`).join("\n"));
-    }, (e: Error) => report.current(e.message));
+    api.scans().then(setScans, () => {});
   }, []);
-  if (!c) return null;
-  const set = <K extends keyof Connectors>(k: K, patch: Partial<Connectors[K]>) => setC({ ...c, [k]: { ...c[k], ...patch } });
-  const save = async () => {
-    const pathMappings = mapping
-      .split("\n")
-      .map((l) => l.split("=>").map((x) => x.trim()))
-      .filter((p) => p.length === 2 && p[0] && p[1])
-      .map(([from, to]) => ({ from: from!, to: to! }));
-    setC(await api.saveConnectors({ ...c, import: { ...c.import, pathMappings } }));
-  };
-  const test = async (name: string) => {
+  const held = scans.filter((s) => s.status === "flagged" && s.heldPath);
+  if (!held.length) return null;
+  const decide = async (s: ScanRecord, action: "release" | "delete") => {
+    if (action === "delete" && !confirm(`Delete ${s.name} for good?`)) return;
+    setBusy(true);
     try {
-      await save();
-      onSaved((await api.testConnector(name)).message + " is reachable");
+      setScans(await api.decideScan(s.id, action));
+      onMessage(action === "release" ? `${s.name} is in the library` : `Deleted ${s.name}`);
     } catch (e) {
-      onSaved((e as Error).message);
+      onMessage((e as Error).message);
+    } finally {
+      setBusy(false);
     }
   };
   return (
-    <section className="panel connectors">
-      <h2>Connections</h2>
-      <h3>Prowlarr (search)</h3>
-      <div className="inline">
-        <input placeholder="http://tower:9696" value={c.prowlarr.url} onChange={(e) => set("prowlarr", { url: e.target.value })} />
-        <input placeholder="API key" value={c.prowlarr.apiKey} onChange={(e) => set("prowlarr", { apiKey: e.target.value })} />
-        <button onClick={() => test("prowlarr")}>Save and test</button>
-      </div>
-      <p className="muted small">Add indexers (and FlareSolverr as an indexer proxy for sites behind Cloudflare) in Prowlarr itself; searches here use PC game categories.</p>
-      <h3>qBittorrent (torrents)</h3>
-      <div className="inline">
-        <input placeholder="http://tower:8080" value={c.qbittorrent.url} onChange={(e) => set("qbittorrent", { url: e.target.value })} />
-        <input placeholder="Username" value={c.qbittorrent.username} onChange={(e) => set("qbittorrent", { username: e.target.value })} />
-        <input type="password" placeholder="Password" value={c.qbittorrent.password} onChange={(e) => set("qbittorrent", { password: e.target.value })} />
-        <input placeholder="Category" value={c.qbittorrent.category} onChange={(e) => set("qbittorrent", { category: e.target.value })} style={{ width: 120 }} />
-        <button onClick={() => test("qbittorrent")}>Save and test</button>
-      </div>
-      <h3>SABnzbd (usenet)</h3>
-      <div className="inline">
-        <input placeholder="http://tower:8085" value={c.sabnzbd.url} onChange={(e) => set("sabnzbd", { url: e.target.value })} />
-        <input placeholder="API key" value={c.sabnzbd.apiKey} onChange={(e) => set("sabnzbd", { apiKey: e.target.value })} />
-        <input placeholder="Category" value={c.sabnzbd.category} onChange={(e) => set("sabnzbd", { category: e.target.value })} style={{ width: 120 }} />
-        <button onClick={() => test("sabnzbd")}>Save and test</button>
-      </div>
-      <h3>Import into the library</h3>
-      <div className="inline">
-        <label>
-          When a download finishes
-          <select value={c.import.mode} onChange={(e) => set("import", { mode: e.target.value as Connectors["import"]["mode"] })}>
-            <option value="copy">Copy it (keeps torrents seeding)</option>
-            <option value="move">Move it (frees the space)</option>
-            <option value="off">Leave it where it is</option>
-          </select>
-        </label>
-      </div>
-      <div className="tidy-options">
-        <label className="check">
-          <input type="checkbox" checked={c.import.tidy.stripJunk} onChange={(e) => set("import", { tidy: { ...c.import.tidy, stripJunk: e.target.checked } })} />
-          Remove junk (site links, .nfo files, read-me and "install tutorial" files)
-        </label>
-        <label className="check">
-          <input type="checkbox" checked={c.import.tidy.extract} onChange={(e) => set("import", { tidy: { ...c.import.tidy, extract: e.target.checked } })} />
-          Unpack archives inside the download, including archives inside archives
-        </label>
-        <label>
-          Store the game as
-          <select value={c.import.tidy.repack} onChange={(e) => set("import", { tidy: { ...c.import.tidy, repack: e.target.value as "zip" | "folder" } })}>
-            <option value="zip">One zip named "Title v1.2.zip" (smaller, fewer files)</option>
-            <option value="folder">A folder named "Title v1.2"</option>
-          </select>
-        </label>
-        <p className="muted small">Disc images and installers are kept as folders so you can set them up once from the app.</p>
-      </div>
-      <h3>Downloads folder</h3>
-      <div className="inline">
-        <input placeholder="/downloads/complete (as this container sees it)" value={c.import.folder} onChange={(e) => set("import", { folder: e.target.value })} style={{ flex: 1 }} />
-        <label className="check">
-          <input type="checkbox" checked={c.import.autoImportFolder} onChange={(e) => set("import", { autoImportFolder: e.target.checked })} />
-          Import new games from it automatically
-        </label>
-      </div>
-      <p className="muted small">Games already sitting there (from any client, or copied in by hand) are listed on this page to import with the same clean-up. Mount the folder into the container first.</p>
-      <h3>itch.io</h3>
-      <div className="inline">
-        <input type="password" placeholder="itch.io API key" value={c.itch.apiKey} onChange={(e) => set("itch", { apiKey: e.target.value })} style={{ flex: 1 }} />
-        <a className="button" href="https://itch.io/user/settings/api-keys" target="_blank" rel="noreferrer">
-          Get a key
-        </a>
-      </div>
-      <p className="muted small">Lets admins add free itch.io games from Discover, Free games straight into the library.</p>
-      <label>
-        Path mappings, one per line: <code>client path =&gt; path in this container</code>
-        <textarea rows={3} value={mapping} onChange={(e) => setMapping(e.target.value)} placeholder="/data/torrents => /downloads" />
-      </label>
-      <button
-        className="primary"
-        onClick={async () => {
-          try {
-            await save();
-            onSaved("Connections saved");
-          } catch (e) {
-            onSaved((e as Error).message);
-          }
-        }}
-      >
-        Save
-      </button>
+    <section className="panel held" id="held">
+      <h2>Held for review</h2>
+      <p className="muted small">The virus scan flagged these, so they were kept out of the library.</p>
+      <ul className="list">
+        {held.map((s) => (
+          <li key={s.id} className="download">
+            <div style={{ flex: 1, minWidth: 240 }}>
+              <strong>{s.name}</strong>
+              <br />
+              <small className="muted">Scanned {new Date(s.scannedAt).toLocaleString()}</small>
+              <ul className="findings">
+                {s.findings.slice(0, 6).map((f, i) => (
+                  <li key={i}>
+                    <small className="error">{f.threat}</small> <small className="muted">{f.file}</small>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <span className="inline">
+              <button disabled={busy} onClick={() => void decide(s, "release")}>
+                Add to library anyway
+              </button>
+              <button className="ghost" disabled={busy} onClick={() => void decide(s, "delete")}>
+                Delete
+              </button>
+            </span>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

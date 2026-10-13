@@ -21,6 +21,22 @@ export interface WishItem {
   addedAt: string;
   /** The library game with the same title, once it's in. */
   libraryId: string | null;
+  /** On the wanted list: searched for on a schedule until it's in the library. */
+  monitored: boolean;
+  searchedAt: string | null;
+  /** The best release the last search found (allowed by the release rules). */
+  found: FoundRelease | null;
+  /** The download started for it, if any. */
+  downloadId: number | null;
+}
+
+export interface FoundRelease {
+  title: string;
+  indexer: string;
+  sizeBytes: number;
+  protocol: "torrent" | "usenet";
+  seeders: number | null;
+  url: string;
 }
 
 export interface WishFeed {
@@ -38,6 +54,8 @@ export interface SteamLink {
   syncedAt: string | null;
   error: string | null;
   count: number;
+  /** Re-sync on the six-hourly timer (the Sync button always works). */
+  autoSync?: boolean;
 }
 
 interface Row {
@@ -52,6 +70,10 @@ interface Row {
   sources: string;
   added_at: string;
   hidden: number;
+  monitored: number;
+  searched_at: string | null;
+  found: string | null;
+  download_id: number | null;
 }
 
 export interface WishInput {
@@ -187,6 +209,10 @@ export class WishlistService {
       sources: json<WishSource[]>(r.sources, []),
       addedAt: r.added_at,
       libraryId: byTitle.get(r.title_key) ?? null,
+      monitored: r.monitored === 1,
+      searchedAt: r.searched_at,
+      found: json<FoundRelease | null>(r.found, null),
+      downloadId: r.download_id,
     }));
   }
 
@@ -253,14 +279,20 @@ export class WishlistService {
     this.db.prepare("UPDATE wishlist SET hidden = 1 WHERE id = ?").run(id);
   }
 
-  async linkSteam(profile: string): Promise<SteamLink> {
+  /** Turns the six-hourly Steam sync on or off without touching the linked profile. */
+  setAutoSync(on: boolean): void {
+    const link = this.steam();
+    if (link) this.saveSteam({ ...link, autoSync: on });
+  }
+
+  async linkSteam(profile: string, autoSync?: boolean): Promise<SteamLink> {
     if (!profile.trim()) {
       this.saveSteam(null);
       this.dropSource((s) => s.kind === "steam");
       return { steamId: "", profile: "", syncedAt: null, error: null, count: 0 };
     }
     const steamId = await resolveSteamId(profile, this.fetchImpl);
-    this.saveSteam({ steamId, profile: profile.trim(), syncedAt: null, error: null, count: 0 });
+    this.saveSteam({ steamId, profile: profile.trim(), syncedAt: null, error: null, count: 0, autoSync: autoSync ?? this.steam()?.autoSync ?? true });
     await this.syncSteam();
     return this.steam()!;
   }
@@ -283,9 +315,10 @@ export class WishlistService {
   }
 
   /** Re-reads Steam and every feed; runs on a timer and from the Sync button. */
-  syncAll(): Promise<void> {
+  syncAll(scheduled = false): Promise<void> {
     this.syncing ??= (async () => {
-      if (this.steam()?.steamId) await this.syncSteam().catch(() => {});
+      const steam = this.steam();
+      if (steam?.steamId && (!scheduled || steam.autoSync !== false)) await this.syncSteam().catch(() => {});
       for (const f of this.feeds()) await this.syncFeed(f).catch(() => {});
     })().finally(() => (this.syncing = null));
     return this.syncing;

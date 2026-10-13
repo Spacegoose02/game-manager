@@ -80,8 +80,12 @@ Status: `[x]` done, `[~]` partly done, `[ ]` not started.
 - [x] Search through Prowlarr (usenet and torrent indexers, including 1337x through FlareSolverr in Prowlarr)
 - [x] Import progress: copying, unpacking and zipping show a percentage on the Downloads page
 - [x] Downloads folder import: games already in the downloads folder are listed to import (or skip) with the same clean-up, or imported automatically
-- [ ] Other torrent clients (Transmission, Deluge)
-- [ ] Wanted list with automatic RSS grabs
+- [x] Transmission and Deluge, with the torrent fetched by LootDen and checked after adding
+- [x] Wanted list: scheduled Prowlarr searches for watched wishlist games, optional auto-grab
+- [x] Release rules: must / must not contain, preferred words, size, seeders, blocked indexers
+- [x] "It's out" and other alerts in the web UI and through Apprise
+- [x] Virus scan on import (ClamAV, optional VirusTotal), flagged imports held for review
+- [x] Update detection against GOG, itch.io and Steam patch notes
 
 The app only fetches what you point it at; it does not bundle indexers or sources.
 

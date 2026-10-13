@@ -115,32 +115,40 @@ The important ones:
 | `GM_API_TOKEN` | Optional admin token for scripts |
 | `GM_EMULATORJS_DATA` | Where the browser emulator loads from (default: the EmulatorJS CDN) |
 
-You don't need environment variables for keys or sign-in: **Admin, Connections and sign-in**
-sets the public address, TinyAuth/OIDC and the IGDB, RAWG and SteamGridDB keys, each with a
-Test button. Values there win over the environment. Download clients (qBittorrent, SABnzbd,
-Prowlarr) are set under **Downloads, Connections**, along with the downloads folder to import
-from (games already sitting there are listed on the Downloads page, or imported automatically)
-and an optional itch.io API key that lets admins add free itch.io games from **Discover, Free games**.
-The **Wishlist** page links a public Steam wishlist and any RSS/Atom list feeds (under **Sources**,
-admins only); they are re-checked every six hours.
+You don't need environment variables for keys or sign-in. Everything an admin can change lives
+under **Settings**, in seven sections:
 
-### Sign in with TinyAuth
+- **Library**: rescan, metadata look-ups and profiles.
+- **Steam & wishlist**: your SteamID64 (or profile link) with **Save ID** and an **Auto-Sync
+  Wishlist** switch, plus RSS/Atom list feeds. The Steam wishlist must be public.
+- **Downloads**: Prowlarr, a torrent client (qBittorrent, Transmission or Deluge), SABnzbd, and
+  importing (copy or move, clean-up, the downloads folder, path mappings).
+- **Wanted & rules**: automatic Prowlarr searches for watched wishlist games, optional
+  auto-grab, and release rules (must / must not contain, preferred words, size, seeders,
+  blocked indexers) used by every search.
+- **Scanning & alerts**: ClamAV (a clamd container or clamscan) and an optional VirusTotal key;
+  flagged imports are held for review on the Downloads page. Alerts show under the bell and
+  can go out through an Apprise server.
+- **Sign-in & services**: public address, TinyAuth/OIDC, IGDB/RAWG/SteamGridDB keys, and the
+  itch.io and NexusMods keys.
+- **News & apps**: news feeds, YouTube rows and desktop app builds.
 
-**OIDC** (recommended): open **Admin, Connections and sign-in**. Set the public address,
-copy the redirect URL shown there into a new OIDC client in TinyAuth, then paste TinyAuth's
-address, the client ID and secret, and press **Save and test**. A "Sign in with TinyAuth"
-button appears on the login page; the desktop app supports it too. (The same settings can
-come from `GM_PUBLIC_URL` and the `GM_OIDC_*` variables instead.)
+Values there win over the environment.
 
-**Forward auth**: if TinyAuth already guards the site through your reverse proxy, set
-`GM_AUTH_HEADER_USER=remote-user` and `GM_TRUSTED_PROXIES` to your proxy's address or
-network (for example `172.18.0.0/16`). Headers from anywhere else are ignored. The desktop
-app and Playnite use personal tokens, so they keep working past the proxy.
+Game pages show a personal journal (status, rating, notes, dated entries) with Time to Beat
+from IGDB, an "Update available" line when GOG, itch.io or Steam has a newer version than your
+copy, and trending NexusMods mods. **Library** has a **Backlog** tab with "Pick something for
+me" and a **Stats** tab.
+
+### Your own logos
+
+Put your files in [brand/](brand/README.md) with the names listed there (logo, wordmark,
+favicon, app icon, Playnite icon). Anything you leave out keeps the built-in raccoon.
 
 ## Install games (desktop app)
 
 Open **Get the app** in the web UI and download the app for your system, enter the server
-address, and sign in. Admins fill that page from **Admin, App downloads**: upload the files,
+address, and sign in. Admins fill that page from **Settings, News & apps**: upload the files,
 or enter the GitHub repository and press **Get latest release**. (Files live in
 `/data/clients`, so copying them there works too.) On a game's page choose the drive and press **Install**. The app:
 

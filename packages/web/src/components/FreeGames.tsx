@@ -56,7 +56,7 @@ export function FreeGames({ isAdmin }: { isAdmin: boolean }) {
             {err && <p className="error small">Couldn't load {s.name} right now: {err.message}</p>}
             {s.id === "itch" && isAdmin && !data.itchConnected && (
               <p className="muted small">
-                Add your itch.io API key under <Link to="/downloads">Downloads, Connections</Link> to put these straight into the library.
+                Add your itch.io API key in <Link to="/settings/services">Settings</Link> to put these straight into the library.
               </p>
             )}
             <div className="free-grid">

@@ -6,6 +6,7 @@ import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import { mapPath } from "../src/connectors/manager.js";
 import { findServerSevenZip } from "../src/connectors/tidy.js";
+import { magnetHash, torrentInfoHash } from "../src/connectors/torrent.js";
 import { makeApp, makeLibrary } from "./helpers.js";
 
 let root: string;
@@ -20,6 +21,9 @@ after(async () => {
 });
 
 /** Fake qBittorrent, SABnzbd and Prowlarr behind one fetch. */
+let qbDropsEverything = false;
+const MAGNET_B = "magnet:?xt=urn:btih:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb&dn=Cool+Game";
+const TORRENT = new TextEncoder().encode("d8:announce3:url4:infod6:lengthi10e4:name4:Cool12:piece lengthi16384e6:pieces0:ee");
 function fakeServices() {
   const torrents: Array<Record<string, unknown>> = [];
   const sabQueue: Array<Record<string, unknown>> = [];
@@ -27,7 +31,8 @@ function fakeServices() {
   const added: string[] = [];
   const impl = (async (input: string | URL | Request, init: RequestInit = {}) => {
     const url = new URL(String(input));
-    const form = init.body instanceof URLSearchParams ? init.body : new URLSearchParams(typeof init.body === "string" ? init.body : "");
+    const form: { get(k: string): unknown } =
+      init.body instanceof FormData ? init.body : init.body instanceof URLSearchParams ? init.body : new URLSearchParams(typeof init.body === "string" ? init.body : "");
     const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { "content-type": "application/json" } });
     if (url.host === "qbit:8080") {
       if (url.pathname === "/api/v2/auth/login") {
@@ -35,12 +40,22 @@ function fakeServices() {
       }
       if ((init.headers as Record<string, string>)?.Cookie !== "SID=abc") return new Response("Forbidden", { status: 403 });
       if (url.pathname === "/api/v2/app/version") return new Response("v5.1.0");
+      if (url.pathname === "/api/v2/torrents/createCategory") return new Response("");
       if (url.pathname === "/api/v2/torrents/add") {
-        added.push(`qbit:${form.get("urls")}|${form.get("category")}|${form.get("tags")}`);
-        torrents.push({ hash: "h1", name: "Cool Game", size: 100, progress: 0.4, dlspeed: 5000, eta: 60, state: "downloading", category: form.get("category"), tags: form.get("tags"), content_path: "/data/torrents/games/Cool Game" });
+        const urls = form.get("urls") as string | null;
+        const file = form.get("torrents") as Blob | null;
+        added.push(`qbit:${urls ?? `file:${(file as File | null)?.name}`}|${form.get("category")}|${form.get("tags")}`);
+        // Like the real thing: "Ok." for any link, but an http(s) link it can't fetch is dropped quietly.
+        const hash = urls?.match(/btih:([a-f0-9]{40})/)?.[1] ?? (file ? torrentInfoHash(new Uint8Array(await file.arrayBuffer())) : null);
+        if (hash && !qbDropsEverything) {
+          torrents.push({ hash, name: "Cool Game", size: 100, progress: 0.4, dlspeed: 5000, eta: 60, state: "downloading", category: form.get("category"), tags: form.get("tags"), content_path: "/data/torrents/games/Cool Game" });
+        }
         return new Response("Ok.");
       }
-      if (url.pathname === "/api/v2/torrents/info") return json(torrents);
+      if (url.pathname === "/api/v2/torrents/info") {
+        const hashes = url.searchParams.get("hashes");
+        return json(hashes ? torrents.filter((t) => hashes.split("|").includes(String(t.hash))) : torrents);
+      }
       if (url.pathname === "/api/v2/torrents/stop") {
         torrents[0]!.state = "stoppedDL";
         return new Response("");
@@ -59,15 +74,22 @@ function fakeServices() {
       if (mode === "queue") return json({ queue: { slots: sabQueue, kbpersec: "1024" } });
       if (mode === "history") return json({ history: { slots: sabHistory } });
     }
+    // Prowlarr's own download links: a redirect to a magnet, a .torrent file, or a login page.
+    if (url.host === "prowlarr:9696" && url.pathname === "/2/download") {
+      const kind = url.searchParams.get("kind");
+      if (kind === "magnet") return new Response(null, { status: 302, headers: { location: MAGNET_B } });
+      if (kind === "file") return new Response(TORRENT, { headers: { "content-disposition": 'attachment; filename="Cool Game.torrent"' } });
+      return new Response("<!DOCTYPE html><html>Please log in</html>", { headers: { "content-type": "text/html" } });
+    }
     if (url.host === "prowlarr:9696") {
       if ((init.headers as Record<string, string>)?.["X-Api-Key"] !== "pkey") return json({}, 401);
       if (url.pathname === "/api/v1/system/status") return json({ version: "1.30.0" });
       if (url.pathname === "/api/v1/search") {
         assert.deepEqual(url.searchParams.getAll("categories"), ["4000"]);
         return json([
-          { guid: "a", title: "Cool Game-GOG", size: 100, indexer: "Some Tracker", protocol: "torrent", magnetUrl: "magnet:?xt=urn:btih:abc", seeders: 3 },
+          { guid: "a", title: "Cool Game-GOG", size: 100, indexer: "Some Tracker", protocol: "torrent", magnetUrl: "magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", seeders: 3 },
           { guid: "b", title: "Cool Game NZB", size: 120, indexer: "Some Indexer", protocol: "usenet", downloadUrl: "http://prowlarr:9696/1/download?apikey=x" },
-          { guid: "c", title: "Popular Copy", size: 100, indexer: "Other", protocol: "torrent", magnetUrl: "magnet:?xt=urn:btih:def", seeders: 99 },
+          { guid: "c", title: "Popular Copy", size: 100, indexer: "Other", protocol: "torrent", magnetUrl: "magnet:?xt=urn:btih:dddddddddddddddddddddddddddddddddddddddd", seeders: 99 },
         ]);
       }
     }
@@ -129,7 +151,8 @@ describe("download connectors", () => {
     assert.deepEqual(results.map((r: { guid: string }) => r.guid), ["c", "a", "b"], "most seeders first");
     const grab = await app.inject({ method: "POST", url: "/api/downloads", headers, payload: { url: results[1].downloadUrl, title: results[1].title, protocol: "torrent" } });
     assert.equal(grab.statusCode, 200);
-    assert.deepEqual(fake.added, ["qbit:magnet:?xt=urn:btih:abc|games|gm-1"]);
+    assert.deepEqual(fake.added, ["qbit:magnet:?xt=urn:btih:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|games|gm-1"]);
+    assert.equal(results.find((r: { best: boolean }) => r.best).guid, "c", "the rules pick the best allowed release");
 
     let list = (await app.inject({ url: "/api/downloads", headers })).json();
     assert.equal(list.downloads[0].live.progress, 0.4);
@@ -144,6 +167,40 @@ describe("download connectors", () => {
     assert.equal(list.downloads[0].status, "imported");
     assert.ok(ctx.library.list({ search: "cool" }).length === 1, "game appears in the library");
     assert.ok(await stat(path.join(src, "cool.exe")), "copy mode leaves the seeding files in place");
+    await app.close();
+  });
+
+  it("hands qBittorrent a magnet or torrent file it can use, and says so when it drops one", async () => {
+    process.env.GM_TORRENT_VERIFY_MS = "5";
+    const fake = fakeServices();
+    const { app } = await makeApp(root, { apiToken: "svc" }, { fetchImpl: fake.impl });
+    const headers = { authorization: "Bearer svc" };
+    await app.inject({ method: "PUT", url: "/api/connectors", headers, payload: SETTINGS });
+    const grab = (kind: string) =>
+      app.inject({ method: "POST", url: "/api/downloads", headers, payload: { url: `http://prowlarr:9696/2/download?kind=${kind}&apikey=x`, title: `Cool Game (${kind})`, protocol: "torrent" } });
+
+    // Before: the Prowlarr link went to qBittorrent as is, which said "Ok." and dropped it.
+    const viaMagnet = await grab("magnet");
+    assert.equal(viaMagnet.statusCode, 200, viaMagnet.body);
+    assert.equal(fake.added.at(-1), `qbit:${MAGNET_B}|games|gm-${viaMagnet.json().id}`);
+    assert.equal(magnetHash(MAGNET_B), "b".repeat(40));
+    const viaFile = await grab("file");
+    assert.equal(viaFile.statusCode, 200, viaFile.body);
+    assert.equal(fake.added.at(-1), `qbit:file:Cool Game.torrent|games|gm-${viaFile.json().id}`);
+    const list = (await app.inject({ url: "/api/downloads", headers })).json();
+    assert.equal(list.downloads.filter((d: { live: unknown }) => d.live).length, 2, "both show live progress");
+
+    const page = await grab("html");
+    assert.equal(page.statusCode, 400);
+    assert.match(page.json().error, /web page instead of a torrent/);
+
+    qbDropsEverything = true;
+    const dropped = await app.inject({ method: "POST", url: "/api/downloads", headers, payload: { url: "magnet:?xt=urn:btih:cccccccccccccccccccccccccccccccccccccccc", title: "Dropped", protocol: "torrent" } });
+    qbDropsEverything = false;
+    assert.equal(dropped.statusCode, 400);
+    assert.match(dropped.json().error, /never added the torrent/);
+    const after = (await app.inject({ url: "/api/downloads", headers })).json();
+    assert.equal(after.downloads.find((d: { name: string }) => d.name === "Dropped").status, "failed", "the failure stays visible in the queue");
     await app.close();
   });
 

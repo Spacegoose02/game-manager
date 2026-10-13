@@ -8,6 +8,9 @@ import { formatBytes, type SearchResult } from "../api";
  */
 export function DownloadResults({ results, onGrab, busy }: { results: SearchResult[]; onGrab: (r: SearchResult, platform: string | null) => void; busy: boolean }) {
   const [platform, setPlatform] = useState("pc");
+  const [showBlocked, setShowBlocked] = useState(false);
+  const blocked = results.filter((r) => r.allowed === false).length;
+  const shown = results.filter((r) => showBlocked || r.allowed !== false);
   return results.length === 0 ? (
     <p className="muted">Nothing found.</p>
   ) : (
@@ -22,6 +25,13 @@ export function DownloadResults({ results, onGrab, busy }: { results: SearchResu
           ))}
         </select>
       </label>
+      {blocked > 0 && (
+        <label className="check small send-to">
+          <input type="checkbox" checked={showBlocked} onChange={(e) => setShowBlocked(e.target.checked)} />
+          Show {blocked} hidden by your release rules
+        </label>
+      )}
+      {shown.length === 0 && <p className="muted">Everything found breaks a release rule.</p>}
             <table className="table">
               <thead>
                 <tr>
@@ -33,8 +43,8 @@ export function DownloadResults({ results, onGrab, busy }: { results: SearchResu
                 </tr>
               </thead>
               <tbody>
-                {results.slice(0, 100).map((r) => (
-                  <tr key={r.guid}>
+                {shown.slice(0, 100).map((r) => (
+                  <tr key={r.guid} className={r.allowed === false ? "blocked" : r.best ? "best" : ""}>
                     <td>
                       {r.infoUrl ? (
                         <a href={r.infoUrl} target="_blank" rel="noreferrer">
@@ -43,11 +53,13 @@ export function DownloadResults({ results, onGrab, busy }: { results: SearchResu
                       ) : (
                         r.title
                       )}
+                      {r.best && <span className="badge small best-badge">Best match</span>}
                       <br />
                       <small className="muted">
                         {r.protocol}
                         {r.publishedAt ? ` · ${new Date(r.publishedAt).toLocaleDateString()}` : ""}
                       </small>
+                      {r.allowed === false && r.reason && <small className="error"> · {r.reason}</small>}
                     </td>
                     <td>{r.indexer}</td>
                     <td className="num">{formatBytes(r.sizeBytes)}</td>

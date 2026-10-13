@@ -45,7 +45,7 @@ export function AdminIntegrations({ onMessage }: { onMessage: (m: string) => voi
 
   return (
     <section className="panel integrations" id="integrations">
-      <h2>Connections and sign-in</h2>
+      <h2>Sign-in and game info keys</h2>
 
       <h3>Public address</h3>
       <div className="inline">
@@ -129,7 +129,7 @@ export function AdminIntegrations({ onMessage }: { onMessage: (m: string) => voi
           Save and test
         </button>
       </div>
-      <p className="muted small">IGDB is throttled to about 3 requests a second, under its limit of 4. After adding keys, use "Match missing" in Metadata above.</p>
+      <p className="muted small">IGDB is throttled to about 3 requests a second, under its limit of 4. After adding keys, use "Retry unmatched" under Library.</p>
     </section>
   );
 }

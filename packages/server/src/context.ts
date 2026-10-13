@@ -17,6 +17,14 @@ import type { FreeGames } from "./news/freegames.js";
 import type { WishlistService } from "./news/wishlist.js";
 import type { ReleaseCalendar } from "./metadata/calendar.js";
 import type { VideoService } from "./news/videos.js";
+import type { Notifier } from "./alerts/notifier.js";
+import type { Scanner } from "./connectors/scan.js";
+import type { WantedService } from "./news/wanted.js";
+import type { VersionChecker } from "./news/version-check.js";
+import type { JournalStore } from "./users/journal.js";
+import type { NexusMods } from "./news/nexus.js";
+import type { TimeToBeat } from "./metadata/time-to-beat.js";
+import type { SourceRegistry } from "./sources/registry.js";
 
 /** Everything route modules need, built once in buildApp. */
 export interface AppContext {
@@ -38,6 +46,14 @@ export interface AppContext {
   wishlist: WishlistService;
   calendar: ReleaseCalendar;
   videos: VideoService;
+  notifier: Notifier;
+  scanner: Scanner;
+  wanted: WantedService;
+  versions: VersionChecker;
+  journal: JournalStore;
+  nexus: NexusMods;
+  sources: SourceRegistry;
+  timeToBeat: (providerId: string | null, title: string) => Promise<TimeToBeat | null>;
 }
 
 declare module "fastify" {

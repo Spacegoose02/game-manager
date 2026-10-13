@@ -3,7 +3,6 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-
 import { useAuth } from "./auth";
 import { Layout } from "./components/Layout";
 import { installSpatialNavigation } from "./gamepad";
-import { Admin } from "./pages/Admin";
 import { Apps } from "./pages/Apps";
 import { Wishlist } from "./pages/Wishlist";
 import { Calendar } from "./pages/Calendar";
@@ -19,6 +18,7 @@ import { Library } from "./pages/Library";
 import { Login } from "./pages/Login";
 import { News } from "./pages/News";
 import { Profile } from "./pages/Profile";
+import { Settings } from "./pages/Settings";
 import { useTheme } from "./theme";
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -57,7 +57,8 @@ export function App() {
         <Route path="emulation/setup" element={<EmulatorSetup />} />
         <Route path="emulation/:platform" element={<EmulationSystem />} />
         <Route path="profile" element={<Profile />} />
-        <Route path="admin" element={<Admin />} />
+        <Route path="admin" element={<Navigate to="/settings" replace />} />
+        <Route path="settings/:section?" element={<Settings />} />
         <Route path="downloads" element={<Downloads />} />
         <Route path="apps" element={<Apps />} />
         <Route path="*" element={<Navigate to="/" replace />} />

@@ -1,6 +1,6 @@
 {
   "name": "@lootden/desktop",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "description": "LootDen desktop app for Windows and Linux",
   "homepage": "https://github.com/Spacegoose02/game-manager",
@@ -10,14 +10,14 @@
   },
   "main": "dist/main.cjs",
   "scripts": {
-    "build": "tsc -p . && node scripts/bundle.mjs",
+    "build": "node ../../scripts/brand.mjs && tsc -p . && node scripts/bundle.mjs",
     "start": "npm run build && electron .",
     "dist": "npm run build && electron-builder --publish never",
     "dist:win": "npm run build && electron-builder --win --publish never",
     "dist:linux": "npm run build && electron-builder --linux --publish never"
   },
   "dependencies": {
-    "@lootden/client": "0.5.0"
+    "@lootden/client": "0.6.0"
   },
   "devDependencies": {
     "electron": "44.7.0",

@@ -1,5 +1,5 @@
 import { createWriteStream } from "node:fs";
-import { mkdir, rename, rm, stat } from "node:fs/promises";
+import { mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -143,6 +143,54 @@ export function parseItchFeed(xml: string, canAdd: boolean): FreeGame[] {
  * Claiming happens on the store with the player's account; itch.io games can also be
  * downloaded into the library when an itch.io key is set.
  */
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+export interface ItchUpload {
+  id: number;
+  filename: string;
+  display_name?: string;
+  size?: number;
+  type?: string;
+  demo?: boolean;
+  /** Older API answers. */
+  p_windows?: boolean;
+  p_linux?: boolean;
+  p_osx?: boolean;
+  p_android?: boolean;
+  /** Current API answers: "p_windows", "p_linux", "p_osx", "p_android", "demo". */
+  traits?: string[];
+  min_price?: number;
+  updated_at?: string;
+}
+
+/**
+ * The Windows (else Linux) download among a game's uploads. Platforms come from the API's
+ * flags or traits, and, for uploads nobody tagged, from the file name. Says why when none fits.
+ */
+export function pickItchUpload(uploads: ItchUpload[]): { upload: ItchUpload | null; why: string } {
+  const has = (u: ItchUpload, t: string) => u[t as "p_windows"] === true || !!u.traits?.includes(t);
+  const name = (u: ItchUpload) => `${u.display_name ?? ""} ${u.filename}`.toLowerCase();
+  const guess = (u: ItchUpload) =>
+    /\.(exe|msi)$|\bwin(dows|32|64)?\b|\bpc\b/.test(name(u)) ? "win" : /\.(appimage|sh|deb|rpm|x86_64)$|\blinux\b|\.tar\.(gz|xz|bz2)$/.test(name(u)) ? "linux" : /\b(mac|osx|macos)\b|\.(dmg|pkg)$/.test(name(u)) ? "mac" : /\.apk$|\bandroid\b/.test(name(u)) ? "android" : null;
+  const files = uploads.filter((u) => !["html", "soundtrack", "book", "video", "documentation", "mod", "audio_assets", "graphical_assets", "sourcecode"].includes(u.type ?? "default"));
+  const full = files.filter((u) => !u.demo && !has(u, "demo"));
+  const pool = full.length ? full : files;
+  const pick =
+    pool.find((u) => has(u, "p_windows")) ??
+    pool.find((u) => has(u, "p_linux")) ??
+    pool.find((u) => !has(u, "p_osx") && !has(u, "p_android") && guess(u) === "win") ??
+    pool.find((u) => !has(u, "p_osx") && !has(u, "p_android") && guess(u) === "linux") ??
+    // One untagged archive with no other platform hints is usually the game.
+    pool.filter((u) => !["p_osx", "p_android", "p_windows", "p_linux"].some((t) => has(u, t)) && !guess(u) && /\.(zip|7z|rar)$/i.test(u.filename)).find((_, __, all) => all.length === 1) ??
+    null;
+  if (pick) return { upload: pick, why: "" };
+  if (!uploads.length)
+    return { upload: null, why: "itch.io gave LootDen no downloads for this game. Paid games, and some pay-what-you-want ones, only list files for accounts that own them; use Download on itch.io and drop the file in the downloads folder" };
+  if (uploads.every((u) => u.type === "html")) return { upload: null, why: "This game is browser-only on itch.io; there's nothing to download" };
+  const others = [...new Set(uploads.flatMap((u) => (has(u, "p_osx") || guess(u) === "mac" ? ["Mac"] : has(u, "p_android") || guess(u) === "android" ? ["Android"] : [])))];
+  return { upload: null, why: others.length ? `This game only has ${others.join(" and ")} downloads on itch.io` : "This game has no Windows or Linux download on itch.io" };
+}
+
 export class FreeGames {
   private cache: { at: number; result: FreeGamesResult } | null = null;
 
@@ -190,7 +238,7 @@ export class FreeGames {
       }),
       get("gog", async () => parseGog(await json("https://catalog.gog.com/v1/catalog?limit=48&price=between:0,0&discounted=eq:true&order=desc:trending&productType=in:game,pack"))),
       get("itch", async () => {
-        const res = await this.fetchImpl("https://itch.io/games/top-rated/free.xml", { headers: UA });
+        const res = await this.itchFetch("https://itch.io/games/top-rated/free.xml");
         if (!res.ok) throw new Error(`itch.io answered ${res.status}`);
         return parseItchFeed(await res.text(), true);
       }),
@@ -201,28 +249,77 @@ export class FreeGames {
   }
 
   /**
+   * itch.io rate-limits bursts (429), so its requests go one at a time with a gap between
+   * them, and a 429 is retried after the wait itch.io asks for (or 2, 4, 8 seconds).
+   */
+  private itchQueue: Promise<unknown> = Promise.resolve();
+  private itchLast = 0;
+  private itchIds = new Map<string, { gameId: string; title: string }>();
+
+  private itchFetch(url: string, init: RequestInit = {}): Promise<Response> {
+    const gap = Number(process.env.GM_ITCH_GAP_MS ?? 1000);
+    const run = async () => {
+      for (let attempt = 0; ; attempt++) {
+        const wait = this.itchLast + gap - Date.now();
+        if (wait > 0) await sleep(wait);
+        this.itchLast = Date.now();
+        const res = await this.fetchImpl(url, { ...init, headers: { ...UA, ...(init.headers as Record<string, string>) } });
+        if (res.status !== 429 || attempt >= 3) {
+          if (res.status === 429) throw new Error("itch.io is limiting how fast LootDen can ask right now. Try again in a minute or two.");
+          return res;
+        }
+        const after = Number(res.headers.get("retry-after"));
+        await sleep(Math.min(30_000, after > 0 ? after * 1000 : gap * 2 ** (attempt + 1)));
+      }
+    };
+    const next = this.itchQueue.then(run, run);
+    this.itchQueue = next.catch(() => {});
+    return next;
+  }
+
+  /** The game's id and title, from its page (or the page's data.json when the page won't load). */
+  private async itchGame(url: URL): Promise<{ gameId: string; title: string }> {
+    const known = this.itchIds.get(url.toString());
+    if (known) return known;
+    let gameId: string | undefined;
+    let title: string | undefined;
+    const page = await this.itchFetch(url.toString()).catch((err: Error) => err);
+    if (page instanceof Response && page.ok) {
+      const html = await page.text();
+      gameId = html.match(/name="itch:path"\s+content="games\/(\d+)"/)?.[1] ?? html.match(/content="games\/(\d+)"\s+name="itch:path"/)?.[1];
+      title = html.match(/<meta property="og:title" content="([^"]+)"/)?.[1];
+    }
+    if (!gameId) {
+      const data = await this.itchFetch(`${url.origin}${url.pathname.replace(/\/$/, "")}/data.json`).catch(() => null);
+      const j = data?.ok ? ((await data.json().catch(() => null)) as { id?: number; title?: string } | null) : null;
+      if (j?.id) [gameId, title] = [String(j.id), title ?? j.title];
+    }
+    if (!gameId) {
+      if (page instanceof Error) throw page;
+      throw new Error(page.ok ? "Couldn't find the game on that page" : `itch.io answered ${page.status}`);
+    }
+    const found = { gameId, title: (title ?? url.pathname.replace(/\//g, "")).replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/&quot;/g, '"') };
+    this.itchIds.set(url.toString(), found);
+    return found;
+  }
+
+  /**
    * Downloads a free itch.io game's Windows (or Linux) build into the games folder.
    * Uses the same API the itch.io app uses, with the admin's own itch.io key.
    */
   async addItchGame(pageUrl: string, gamesDir: string): Promise<string> {
     const key = this.itchKey();
-    if (!key) throw new Error("Add your itch.io API key under Downloads, Connections first");
+    if (!key) throw new Error("Add your itch.io API key under Settings, Other services first");
     const url = new URL(pageUrl);
     if (!/(^|\.)itch\.io$/.test(url.hostname)) throw new Error("That isn't an itch.io game page");
-    const page = await this.fetchImpl(url.toString(), { headers: UA });
-    if (!page.ok) throw new Error(`itch.io answered ${page.status}`);
-    const html = await page.text();
-    const gameId = html.match(/name="itch:path"\s+content="games\/(\d+)"/)?.[1] ?? html.match(/content="games\/(\d+)"\s+name="itch:path"/)?.[1];
-    if (!gameId) throw new Error("Couldn't find the game on that page");
-    const title = (html.match(/<meta property="og:title" content="([^"]+)"/)?.[1] ?? url.pathname.replace(/\//g, "")).replace(/&amp;/g, "&").replace(/&#39;/g, "'");
-    const auth = { ...UA, Authorization: `Bearer ${key}` };
+    const { gameId, title } = await this.itchGame(url);
+    const auth = { Authorization: `Bearer ${key}` };
 
-    const up = await this.fetchImpl(`https://api.itch.io/games/${gameId}/uploads`, { headers: auth });
+    const up = await this.itchFetch(`https://api.itch.io/games/${gameId}/uploads`, { headers: auth });
     if (!up.ok) throw new Error(up.status === 401 || up.status === 403 ? "itch.io didn't accept the key" : `itch.io answered ${up.status}`);
-    const uploads = ((await up.json()) as { uploads?: Array<{ id: number; filename: string; size?: number; p_windows?: boolean; p_linux?: boolean; type?: string; demo?: boolean }> }).uploads ?? [];
-    const playable = uploads.filter((u) => (u.type ?? "default") === "default" && !u.demo);
-    const pick = playable.find((u) => u.p_windows) ?? playable.find((u) => u.p_linux);
-    if (!pick) throw new Error("This game has no Windows or Linux download (it may be browser-only or paid)");
+    const uploads = ((await up.json()) as { uploads?: ItchUpload[] }).uploads ?? [];
+    const pick = pickItchUpload(uploads);
+    if (!pick.upload) throw new Error(pick.why);
 
     const folder = path.join(gamesDir, safeFolderName(title));
     if (await stat(folder).catch(() => null)) throw new Error(`${path.basename(folder)} is already in the games folder`);
@@ -230,10 +327,12 @@ export class FreeGames {
     await rm(temp, { recursive: true, force: true });
     await mkdir(temp, { recursive: true });
     try {
-      const dl = await this.fetchImpl(`https://api.itch.io/uploads/${pick.id}/download`, { headers: auth, redirect: "follow" });
+      const dl = await this.itchFetch(`https://api.itch.io/uploads/${pick.upload.id}/download`, { headers: auth, redirect: "follow" });
       if (!dl.ok || !dl.body) throw new Error(`Download failed with ${dl.status}`);
-      await pipeline(Readable.fromWeb(dl.body as import("node:stream/web").ReadableStream), createWriteStream(path.join(temp, path.basename(pick.filename))));
+      await pipeline(Readable.fromWeb(dl.body as import("node:stream/web").ReadableStream), createWriteStream(path.join(temp, path.basename(pick.upload.filename))));
       // A folder per game; zips inside are unpacked on each player's PC like any other game.
+      // Remembered so update checks can compare with itch.io's newest upload (hidden from scans).
+      await writeFile(path.join(temp, ".itch.json"), JSON.stringify({ gameId: Number(gameId), uploadId: pick.upload.id, updatedAt: pick.upload.updated_at ?? new Date().toISOString(), url: url.toString() }));
       await rename(temp, folder);
     } catch (err) {
       await rm(temp, { recursive: true, force: true });

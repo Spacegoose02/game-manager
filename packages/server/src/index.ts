@@ -39,8 +39,17 @@ if (config.scanIntervalMinutes > 0) setInterval(rescan, config.scanIntervalMinut
 setInterval(() => ctx.auth.pruneSessions(), 6 * 3600_000).unref();
 // Import finished torrent/usenet downloads into the library.
 // Steam wishlist and list feeds: every six hours, and once shortly after startup.
-setTimeout(() => void ctx.wishlist.syncAll().catch(() => {}), 30_000).unref();
-setInterval(() => void ctx.wishlist.syncAll().catch(() => {}), 6 * 3600_000).unref();
+setTimeout(() => void ctx.wishlist.syncAll(true).catch(() => {}), 30_000).unref();
+setInterval(() => void ctx.wishlist.syncAll(true).catch(() => {}), 6 * 3600_000).unref();
+// The wanted list: "it's out" alerts and due Prowlarr searches every half hour.
+setTimeout(() => void ctx.wanted.run().catch((err) => app.log.warn(err, "Wanted search failed")), 90_000).unref();
+setInterval(() => void ctx.wanted.run().catch((err) => app.log.warn(err, "Wanted search failed")), 30 * 60_000).unref();
+// Release sources switched on under Settings, Sources: every half hour.
+setTimeout(() => void ctx.sources.run().catch(() => {}), 2 * 60_000).unref();
+setInterval(() => void ctx.sources.run().catch(() => {}), 30 * 60_000).unref();
+// Update checks for PC games, once a day.
+setTimeout(() => void ctx.versions.run().catch(() => {}), 10 * 60_000).unref();
+setInterval(() => void ctx.versions.run().catch(() => {}), 24 * 3600_000).unref();
 setInterval(() => ctx.downloads.reconcile().catch((err) => app.log.warn(err, "Download import failed")), 60_000).unref();
 
 const shutdown = async () => {

@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { api, type WishItem, type WishlistState } from "../api";
+import { api, formatBytes, type WishItem, type WishlistState } from "../api";
 import { useAuth } from "../auth";
 import { FindDownloads } from "../components/FindDownloads";
 
-type Filter = "all" | "missing" | "owned" | "upcoming";
+type Filter = "all" | "wanted" | "missing" | "owned" | "upcoming";
 
 const when = (w: WishItem) => {
   if (w.releaseDate) {
@@ -25,7 +25,6 @@ export function Wishlist() {
   const [filter, setFilter] = useState<Filter>("all");
   const [title, setTitle] = useState("");
   const [finding, setFinding] = useState<WishItem | null>(null);
-  const [showSources, setShowSources] = useState(false);
 
   useEffect(() => {
     api.wishlist().then(setData, (e: Error) => setMsg({ text: e.message, error: true }));
@@ -48,6 +47,7 @@ export function Wishlist() {
     const all = data?.items ?? [];
     const today = new Date().toISOString().slice(0, 10);
     if (filter === "missing") return all.filter((i) => !i.libraryId);
+    if (filter === "wanted") return all.filter((i) => i.monitored && !i.libraryId).sort((a, b) => Number(!!b.found) - Number(!!a.found));
     if (filter === "owned") return all.filter((i) => i.libraryId);
     if (filter === "upcoming") return all.filter((i) => (i.releaseDate ? i.releaseDate > today : !!i.dateText)).sort((a, b) => (a.releaseDate ?? "9999").localeCompare(b.releaseDate ?? "9999"));
     return all;
@@ -67,9 +67,9 @@ export function Wishlist() {
         <h1>Wishlist</h1>
         <span className="inline">
           {isAdmin && (
-            <button onClick={() => setShowSources(!showSources)} aria-expanded={showSources}>
-              Sources
-            </button>
+            <Link className="button" to="/settings/steam">
+              Steam ID &amp; feeds
+            </Link>
           )}
           <button className="primary" disabled={busy || noSources} onClick={() => void run(() => api.syncWishlist(), "Synced")}>
             {busy ? "Working…" : "Sync now"}
@@ -77,7 +77,11 @@ export function Wishlist() {
         </span>
       </div>
 
-      {data && (showSources || (isAdmin && noSources)) && isAdmin && <Sources data={data} busy={busy} run={run} />}
+      {data && isAdmin && noSources && (
+        <p className="notice">
+          Add your Steam ID in <Link to="/settings/steam">Settings, Steam &amp; wishlist</Link> to bring in your Steam wishlist, or add list feeds there.
+        </p>
+      )}
       {data && !isAdmin && noSources && <p className="muted">An admin can link a Steam wishlist or add list feeds here. You can add games by hand below.</p>}
 
       <form className="panel inline" onSubmit={add}>
@@ -91,6 +95,7 @@ export function Wishlist() {
           {(
             [
               ["all", `All ${data.items.length}`],
+              ...(isAdmin ? ([["wanted", `Wanted ${data.items.filter((i) => i.monitored && !i.libraryId).length}`]] as const) : []),
               ["missing", "Not in library"],
               ["owned", "In library"],
               ["upcoming", "Coming out"],
@@ -124,6 +129,7 @@ export function Wishlist() {
                   </span>
                 ))}
               </span>
+              {isAdmin && !w.libraryId && <WantedLine w={w} busy={busy} run={run} />}
               <span className="inline wrap wish-actions">
                 {w.url && (
                   <a className="button small" href={w.url} target="_blank" rel="noreferrer">
@@ -132,7 +138,7 @@ export function Wishlist() {
                 )}
                 {isAdmin && !w.libraryId && (
                   <button className="small" onClick={() => setFinding(w)}>
-                    Find downloads
+                    All results
                   </button>
                 )}
                 <button className="ghost small" disabled={busy} title="Removed games stay off when syncing" onClick={() => void run(() => api.removeWish(w.id))}>
@@ -147,69 +153,44 @@ export function Wishlist() {
   );
 }
 
-/** Admin: the Steam profile to mirror and the list feeds to pull from. */
-function Sources({ data, busy, run }: { data: WishlistState; busy: boolean; run: (fn: () => Promise<WishlistState>, done?: string) => Promise<void> }) {
-  const [profile, setProfile] = useState(data.steam?.profile ?? "");
-  const [feedUrl, setFeedUrl] = useState("");
-  const [feedName, setFeedName] = useState("");
-  const steam = data.steam;
-  return (
-    <section className="panel wish-sources">
-      <h2>Steam wishlist</h2>
-      <form
-        className="inline"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void run(() => api.linkSteamWishlist(profile), profile.trim() ? "Linked and synced" : "Unlinked");
-        }}
-      >
-        <input placeholder="Steam profile link, custom URL name or Steam ID" value={profile} onChange={(e) => setProfile(e.target.value)} style={{ flex: 1 }} />
-        <button className="primary" disabled={busy}>
-          {steam?.steamId && !profile.trim() ? "Unlink" : "Link"}
-        </button>
-      </form>
-      <p className="muted small">
-        {steam?.steamId
-          ? `${steam.count} games${steam.syncedAt ? `, synced ${new Date(steam.syncedAt).toLocaleString()}` : ""}. Checked every six hours.`
-          : "The wishlist must be public: in Steam, Profile, Edit Profile, Privacy Settings, set Game details to Public."}
-      </p>
-      {steam?.error && <p className="error small">{steam.error}</p>}
+const since = (iso: string) => {
+  const h = (Date.now() - Date.parse(iso)) / 3600_000;
+  return h < 1 ? "just now" : h < 24 ? `${Math.round(h)} h ago` : `${Math.round(h / 24)} d ago`;
+};
 
-      <h2>List feeds</h2>
-      <p className="muted small">Any RSS or Atom feed of games. Each item becomes a wishlist entry; a game already on the list from Steam or another feed isn't added twice.</p>
-      {data.feeds.length > 0 && (
-        <ul className="list">
-          {data.feeds.map((f) => (
-            <li key={f.id} className="inline" style={{ justifyContent: "space-between" }}>
-              <span>
-                <strong>{f.name}</strong>
-                <br />
-                <small className="muted">
-                  {f.url} · {f.itemCount} items{f.checkedAt ? ` · checked ${new Date(f.checkedAt).toLocaleString()}` : ""}
-                </small>
-                {f.error && <small className="error"> · {f.error}</small>}
-              </span>
-              <button className="ghost small" disabled={busy} onClick={() => void run(() => api.removeWishFeed(f.id), `Removed ${f.name} and the games only it added`)}>
-                Remove
-              </button>
-            </li>
-          ))}
-        </ul>
+/** Admin: whether the game is watched, what the last search found, and Search / Grab. */
+function WantedLine({ w, busy, run }: { w: WishItem; busy: boolean; run: (fn: () => Promise<WishlistState>, done?: string) => Promise<void> }) {
+  return (
+    <div className={`wanted-line${w.monitored ? "" : " off"}`}>
+      <label className="check small" title="Watched games are searched automatically when auto-search is on">
+        <input type="checkbox" checked={w.monitored} disabled={busy} onChange={(e) => void run(() => api.setMonitored(w.id, e.target.checked))} />
+        Watch
+      </label>
+      {w.downloadId ? (
+        <small className="good">Downloading</small>
+      ) : w.found ? (
+        <span className="found" title={w.found.title}>
+          <small>
+            <strong>Found:</strong> {w.found.title}
+          </small>
+          <small className="muted">
+            {w.found.indexer} · {formatBytes(w.found.sizeBytes)}
+            {w.found.protocol === "torrent" && w.found.seeders != null ? ` · ${w.found.seeders} seeds` : ""}
+          </small>
+        </span>
+      ) : (
+        <small className="muted">{w.searchedAt ? `Nothing allowed found ${since(w.searchedAt)}` : "Not searched yet"}</small>
       )}
-      <form
-        className="inline"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void run(() => api.addWishFeed(feedUrl.trim(), feedName.trim() || undefined), "Feed added").then(() => {
-            setFeedUrl("");
-            setFeedName("");
-          });
-        }}
-      >
-        <input type="url" placeholder="https://example.com/list/rss" value={feedUrl} onChange={(e) => setFeedUrl(e.target.value)} style={{ flex: 2 }} />
-        <input placeholder="Name (optional)" value={feedName} onChange={(e) => setFeedName(e.target.value)} style={{ flex: 1 }} />
-        <button disabled={busy || !feedUrl.trim()}>Add feed</button>
-      </form>
-    </section>
+      <span className="inline">
+        <button className="small ghost" disabled={busy} onClick={() => void run(() => api.searchWanted(w.id), `Searched for ${w.title}`)}>
+          Search now
+        </button>
+        {w.found && !w.downloadId && (
+          <button className="small primary" disabled={busy} onClick={() => void run(() => api.grabWanted(w.id), `Sent ${w.found!.title} to the download client`)}>
+            Grab
+          </button>
+        )}
+      </span>
+    </div>
   );
 }

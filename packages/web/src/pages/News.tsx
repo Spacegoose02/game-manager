@@ -54,7 +54,7 @@ export function News() {
           No feeds yet.{" "}
           {me?.role === "admin" ? (
             <>
-              Add RSS feeds under <Link to="/admin">Admin</Link>.
+              Add RSS feeds in <Link to="/settings/content">Settings</Link>.
             </>
           ) : (
             "Ask an admin to add some."

@@ -83,7 +83,7 @@ export function ArtworkEditor({ game, onChange }: { game: GameDetail; onChange: 
       </form>
       {options && (
         <div className={`art-options art-options-${kind}`}>
-          {options.length === 0 && <p className="muted small">Nothing found. Add a SteamGridDB key under Admin, Connections for many more choices.</p>}
+          {options.length === 0 && <p className="muted small">Nothing found. Add a SteamGridDB key in Settings, Sign-in &amp; services for many more choices.</p>}
           {options.map((o) => (
             <button key={o.url} className="art-option" disabled={busy} title={o.source} onClick={() => apply(() => api.setArtworkUrl(game.id, kind, o.url)).then(() => setOptions(null))}>
               <img src={o.thumb} alt="" loading="lazy" />

@@ -13,6 +13,8 @@ RUN npm ci --ignore-scripts
 COPY packages/shared packages/shared
 COPY packages/server packages/server
 COPY packages/web packages/web
+# Your logos (see brand/README.md); the web build falls back to the built-in ones.
+COPY brand brand
 RUN npx tsc -b packages/shared packages/server && npm run build -w @lootden/web
 
 FROM node:22-alpine

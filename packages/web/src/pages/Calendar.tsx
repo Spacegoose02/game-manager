@@ -97,7 +97,7 @@ export function Calendar() {
             (me?.role === "admin" ? (
               <>
                 {" "}
-                Steam only lists PC games and often has no exact date; add an IGDB or RAWG key under <Link to="/admin">Admin</Link> for a fuller calendar.
+                Steam only lists PC games and often has no exact date; add an IGDB or RAWG key in <Link to="/settings/services">Settings</Link> for a fuller calendar.
               </>
             ) : (
               " Steam only lists PC games."
