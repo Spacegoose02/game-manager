@@ -1,6 +1,6 @@
 {
   "name": "@game-manager/desktop",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Game Manager desktop app for Windows and Linux",
   "author": "underwood02",
@@ -13,7 +13,7 @@
     "dist:linux": "npm run build && electron-builder --linux --publish never"
   },
   "dependencies": {
-    "@game-manager/client": "0.1.0"
+    "@game-manager/client": "0.3.0"
   },
   "devDependencies": {
     "electron": "44.7.0",

@@ -1,6 +1,6 @@
 {
   "name": "@game-manager/server",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "main": "dist/src/index.js",
@@ -10,7 +10,7 @@
   "dependencies": {
     "@fastify/cookie": "^11.1.3",
     "@fastify/static": "^10.1.6",
-    "@game-manager/shared": "0.1.0",
+    "@game-manager/shared": "0.3.0",
     "fast-xml-parser": "^5.11.2",
     "fastify": "^5.2.0",
     "openid-client": "^6.8.8"

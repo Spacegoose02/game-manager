@@ -1,17 +1,17 @@
 {
   "name": "@game-manager/client",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "bin": {
     "gm": "dist/src/cli.js"
   },
   "dependencies": {
-    "@game-manager/shared": "0.1.0",
+    "@game-manager/shared": "0.3.0",
     "7zip-bin": "^5.2.0"
   },
   "devDependencies": {
-    "@game-manager/server": "0.1.0",
+    "@game-manager/server": "0.3.0",
     "@yao-pkg/pkg": "^6.6.0",
     "esbuild": "^0.25.0"
   },
