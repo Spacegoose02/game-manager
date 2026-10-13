@@ -1,0 +1,75 @@
+import { useEffect, useState } from "react";
+
+export interface Drive {
+  path: string;
+  label: string;
+  freeBytes: number;
+  totalBytes: number;
+}
+
+export interface InstalledGame {
+  gameId: string;
+  title: string;
+  dir: string;
+  installedAt: string;
+  executable?: string;
+}
+
+export type Progress =
+  | { gameId: string; type: "start"; gameDir: string; totalBytes: number }
+  | { gameId: string; type: "download"; file: string; index: number; count: number; received: number; total: number }
+  | { gameId: string; type: "downloaded"; file: string; skipped: boolean }
+  | { gameId: string; type: "extract"; archive: string }
+  | { gameId: string; type: "removed"; files: string[] }
+  | { gameId: string; type: "warning"; message: string }
+  | { gameId: string; type: "done"; gameDir: string }
+  | { gameId: string; type: "error" | "cancelled"; message: string }
+  | { gameId: string; type: "playing" }
+  | { gameId: string; type: "stopped"; seconds: number };
+
+/** Bridge the desktop app injects (packages/desktop/src/preload.ts). Absent in a normal browser. */
+export interface DesktopBridge {
+  version: number;
+  info(): Promise<{ platform: string; version: string; installDir: string; libraryDirs: string[]; hostname: string; installing: string[] }>;
+  drives(): Promise<Drive[]>;
+  chooseFolder(): Promise<string | null>;
+  setInstallDir(dir: string): Promise<string>;
+  installed(): Promise<InstalledGame[]>;
+  install(gameId: string, dir?: string): Promise<{ gameDir: string }>;
+  cancel(gameId: string): Promise<void>;
+  play(gameId: string): Promise<{ executable: string } | null>;
+  uninstall(gameId: string): Promise<boolean>;
+  openFolder(gameId: string): Promise<void>;
+  changeServer(): Promise<void>;
+  toggleFullscreen(): Promise<boolean>;
+  onProgress(cb: (p: Progress) => void): () => void;
+}
+
+export const desktop: DesktopBridge | undefined = (window as unknown as { gameManager?: DesktopBridge }).gameManager;
+
+/** Electron prefixes errors from the main process; keep just the message. */
+export const bridgeError = (e: unknown) => String((e as Error)?.message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
+
+/** Live install/play state for one game in the desktop app. */
+export function useDesktopGame(gameId: string) {
+  const [installed, setInstalled] = useState<InstalledGame | null>(null);
+  const [progress, setProgress] = useState<Progress | null>(null);
+
+  const refresh = async () => {
+    if (!desktop) return;
+    setInstalled((await desktop.installed()).find((g) => g.gameId === gameId) ?? null);
+  };
+
+  useEffect(() => {
+    if (!desktop) return;
+    void refresh();
+    return desktop.onProgress((p) => {
+      if (p.gameId !== gameId) return;
+      setProgress(p);
+      if (p.type === "done" || p.type === "stopped") void refresh();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameId]);
+
+  return { installed, progress, refresh, setProgress };
+}

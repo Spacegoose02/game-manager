@@ -1,0 +1,35 @@
+node_modules/
+dist/
+build/
+release/
+*.tsbuildinfo
+coverage/
+*.log
+
+# Server data (database, covers, tokens) and local game folders
+data/
+/games/
+*.db
+*.sqlite
+*.sqlite3
+
+# Local config and secrets
+.env
+.env.*
+!.env.example
+config.local.json
+
+# Downloads in progress
+*.part
+
+# OS / editor clutter
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/*
+!.vscode/extensions.json
+.idea/
+packages/desktop/vendor/
+playnite/**/bin/
+playnite/**/obj/
+!packages/desktop/build/

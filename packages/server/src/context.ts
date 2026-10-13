@@ -1,0 +1,64 @@
+import type { FastifyReply, FastifyRequest } from "fastify";
+import type { AuthService, Principal } from "./auth/service.js";
+import type { OidcService } from "./auth/oidc.js";
+import type { Library } from "./catalog/library.js";
+import type { ServerConfig } from "./config.js";
+import type { DownloadManager } from "./connectors/manager.js";
+import type { Db } from "./db/database.js";
+import type { MetadataService } from "./metadata/service.js";
+import type { NewsService } from "./news/service.js";
+import type { UserRepo } from "./users/repo.js";
+import type { Integrations } from "./settings/integrations.js";
+import type { ClientDownloads } from "./clients/store.js";
+
+/** Everything route modules need, built once in buildApp. */
+export interface AppContext {
+  config: ServerConfig;
+  db: Db;
+  library: Library;
+  users: UserRepo;
+  auth: AuthService;
+  oidc: OidcService;
+  metadata: MetadataService;
+  news: NewsService;
+  downloads: DownloadManager;
+  integrations: Integrations;
+  clients: ClientDownloads;
+}
+
+declare module "fastify" {
+  interface FastifyRequest {
+    principal: Principal | null;
+  }
+}
+
+export class HttpProblem extends Error {
+  constructor(
+    readonly statusCode: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+export function requireUser(req: FastifyRequest): Principal {
+  if (!req.principal) throw new HttpProblem(401, "Sign in first");
+  return req.principal;
+}
+
+/** A signed-in person (not the service token), for routes about "my" account. */
+export function requirePerson(req: FastifyRequest) {
+  const p = requireUser(req);
+  if (!p.user) throw new HttpProblem(400, "The service token has no profile; use a personal account");
+  return p.user;
+}
+
+export function requireAdmin(req: FastifyRequest): Principal {
+  const p = requireUser(req);
+  if (p.role !== "admin") throw new HttpProblem(403, "Admins only");
+  return p;
+}
+
+export function sendProblem(reply: FastifyReply, status: number, message: string) {
+  return reply.code(status).send({ error: message });
+}

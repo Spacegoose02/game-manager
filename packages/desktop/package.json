@@ -1,0 +1,80 @@
+{
+  "name": "@game-manager/desktop",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Game Manager desktop app for Windows and Linux",
+  "author": "underwood02",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build": "tsc -p . && node scripts/bundle.mjs",
+    "start": "npm run build && electron .",
+    "dist": "npm run build && electron-builder --publish never",
+    "dist:win": "npm run build && electron-builder --win --publish never",
+    "dist:linux": "npm run build && electron-builder --linux --publish never"
+  },
+  "dependencies": {
+    "@game-manager/client": "0.1.0"
+  },
+  "devDependencies": {
+    "electron": "44.7.0",
+    "electron-builder": "^26.0.0",
+    "esbuild": "^0.25.0"
+  },
+  "build": {
+    "appId": "io.github.gamemanager.desktop",
+    "productName": "Game Manager",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**",
+      "setup/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "vendor/7zip",
+        "to": "7zip",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "protocols": [
+      {
+        "name": "Game Manager",
+        "schemes": [
+          "gamemanager"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.png",
+      "executableName": "GameManager"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Game",
+      "icon": "build/icon.png",
+      "mimeTypes": [
+        "x-scheme-handler/gamemanager"
+      ],
+      "executableName": "game-manager"
+    },
+    "artifactName": "GameManager-${version}-${os}-${arch}.${ext}",
+    "publish": null
+  }
+}

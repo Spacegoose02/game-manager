@@ -1,0 +1,97 @@
+import path from "node:path";
+
+export interface ServerConfig {
+  host: string;
+  port: number;
+  /** Folder that holds the games. Read-only access is enough. */
+  gamesDir: string;
+  /** Writable folder for the database and cached images. */
+  dataDir: string;
+  /** Public base URL (https://games.example.com). Needed for OIDC redirects and secure cookies. */
+  publicUrl: string;
+  /** Optional service token with admin rights (scripts, the first client before accounts exist). */
+  apiToken: string;
+  /** Minutes between automatic rescans; 0 turns periodic rescans off. */
+  scanIntervalMinutes: number;
+  /** React to file changes in the games folder. */
+  watch: boolean;
+  logLevel: string;
+  admin: { username: string; password: string };
+  oidc: {
+    issuer: string;
+    clientId: string;
+    clientSecret: string;
+    /** Button label on the login page. */
+    name: string;
+    scopes: string;
+    /** Create accounts on first OIDC login. */
+    autoCreate: boolean;
+    /** Members of this group (from the "groups" claim) become admins. */
+    adminGroup: string;
+  };
+  /** Trusted reverse-proxy login (TinyAuth, Authelia, Authentik forward auth). */
+  headerAuth: {
+    userHeader: string;
+    emailHeader: string;
+    nameHeader: string;
+    groupsHeader: string;
+    /** Only requests from these addresses may use the headers. */
+    trustedProxies: string[];
+    adminGroup: string;
+  };
+  igdb: { clientId: string; clientSecret: string };
+  /** RAWG.io metadata (free key from rawg.io/apidocs). */
+  rawg: { apiKey: string };
+  /** SteamGridDB artwork (free key from steamgriddb.com). */
+  steamgriddb: { apiKey: string };
+  /** Look up metadata automatically for new games. */
+  metadataAuto: boolean;
+}
+
+function int(value: string | undefined, fallback: number): number {
+  if (value === undefined || value === "") return fallback;
+  const n = Number.parseInt(value, 10);
+  if (Number.isNaN(n) || n < 0) throw new Error(`Expected a non-negative integer, got "${value}"`);
+  return n;
+}
+
+function bool(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined || value === "") return fallback;
+  return /^(1|true|yes|on)$/i.test(value);
+}
+
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
+  return {
+    host: env.GM_HOST || "0.0.0.0",
+    port: int(env.GM_PORT, 8080),
+    gamesDir: path.resolve(env.GM_GAMES_DIR || "/games"),
+    dataDir: path.resolve(env.GM_DATA_DIR || "/data"),
+    publicUrl: (env.GM_PUBLIC_URL || "").replace(/\/+$/, ""),
+    apiToken: env.GM_API_TOKEN || "",
+    scanIntervalMinutes: int(env.GM_SCAN_INTERVAL_MINUTES, 30),
+    watch: bool(env.GM_WATCH, true),
+    logLevel: env.GM_LOG_LEVEL || "info",
+    admin: { username: env.GM_ADMIN_USERNAME || "", password: env.GM_ADMIN_PASSWORD || "" },
+    oidc: {
+      issuer: env.GM_OIDC_ISSUER || "",
+      clientId: env.GM_OIDC_CLIENT_ID || "",
+      clientSecret: env.GM_OIDC_CLIENT_SECRET || "",
+      name: env.GM_OIDC_NAME || "Single sign-on",
+      scopes: env.GM_OIDC_SCOPES || "openid profile email groups",
+      autoCreate: bool(env.GM_OIDC_AUTO_CREATE, true),
+      adminGroup: env.GM_OIDC_ADMIN_GROUP || "",
+    },
+    headerAuth: {
+      userHeader: (env.GM_AUTH_HEADER_USER || "").toLowerCase(),
+      emailHeader: (env.GM_AUTH_HEADER_EMAIL || "remote-email").toLowerCase(),
+      nameHeader: (env.GM_AUTH_HEADER_NAME || "remote-name").toLowerCase(),
+      groupsHeader: (env.GM_AUTH_HEADER_GROUPS || "remote-groups").toLowerCase(),
+      trustedProxies: (env.GM_TRUSTED_PROXIES || "").split(",").map((s) => s.trim()).filter(Boolean),
+      adminGroup: env.GM_AUTH_HEADER_ADMIN_GROUP || "",
+    },
+    igdb: { clientId: env.GM_IGDB_CLIENT_ID || "", clientSecret: env.GM_IGDB_CLIENT_SECRET || "" },
+    rawg: { apiKey: env.GM_RAWG_API_KEY || "" },
+    steamgriddb: { apiKey: env.GM_STEAMGRIDDB_API_KEY || "" },
+    metadataAuto: bool(env.GM_METADATA_AUTO, true),
+  };
+}

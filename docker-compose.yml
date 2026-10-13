@@ -1,0 +1,24 @@
+# Example deployment. Copy .env.example to .env, adjust paths, then:
+#   docker compose up -d            (uses the published image)
+#   docker compose up -d --build    (builds from this folder instead)
+services:
+  game-manager:
+    build: .
+    image: ${GM_IMAGE:-ghcr.io/your-github-user/game-manager:latest}
+    container_name: game-manager
+    restart: unless-stopped
+    ports:
+      - "${GM_PORT:-8080}:8080"
+    env_file: .env
+    environment:
+      GM_GAMES_DIR: /games
+      GM_DATA_DIR: /data
+    volumes:
+      # Writable so finished downloads can be imported. Add :ro if you don't use the
+      # Downloads page and want the server unable to change your library.
+      - ${GAMES_PATH:-/mnt/user/games}:/games
+      - ${APPDATA_PATH:-/mnt/user/appdata/game-manager}:/data
+      # Optional: the share qBittorrent / SABnzbd finish downloads into. Then, in the web UI
+      # under Downloads, Connections, Path mappings, map each client's own container path
+      # for that share to /downloads (e.g. "/data => /downloads").
+      - ${DOWNLOADS_PATH:-/mnt/user/downloads}:/downloads

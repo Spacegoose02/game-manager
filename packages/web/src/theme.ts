@@ -1,0 +1,139 @@
+import { useEffect, useState } from "react";
+
+/**
+ * Themes are sets of CSS variables (see the token list in styles.css). Each one only
+ * needs a few colours; the rest are derived. The picker shows them in two groups,
+ * like the reference board: Modern and Retro.
+ */
+interface ThemeDef {
+  id: string;
+  name: string;
+  note: string;
+  group: "Modern" | "Retro";
+  scheme: "dark" | "light";
+  bg: string;
+  bg2: string;
+  panel: string;
+  border: string;
+  text: string;
+  muted: string;
+  accent: string;
+  accent2: string;
+  accentText?: string;
+  radius?: number;
+  font?: string;
+  /** Extra page background layers (gradients) behind everything. */
+  glow?: string;
+  pageBg?: string;
+}
+
+const MONO = '"JetBrains Mono", "Cascadia Mono", Consolas, ui-monospace, monospace';
+
+const DEFS: ThemeDef[] = [
+  // ---- Modern ----
+  {
+    id: "wavelength", name: "Wavelength", note: "Neon synthwave on deep purple", group: "Modern", scheme: "dark",
+    bg: "#0d0820", bg2: "#160d33", panel: "#1e1342", border: "#3a2a6e", text: "#f3eeff", muted: "#b3a6d9", accent: "#ff4fd8", accent2: "#2ef2ff", accentText: "#12051f",
+    pageBg: "radial-gradient(1200px 600px at 10% -10%, #3b136b 0%, transparent 60%), radial-gradient(900px 500px at 110% 10%, #0b4a6b 0%, transparent 55%)",
+    glow: "0 0 24px rgba(255, 79, 216, 0.35)",
+  },
+  {
+    id: "manatee", name: "Manatee", note: "Calm slate blues, soft and rounded", group: "Modern", scheme: "dark", radius: 22,
+    bg: "#1d2633", bg2: "#253141", panel: "#2e3c4f", border: "#41546b", text: "#eef3f8", muted: "#a5b4c6", accent: "#7fb4e8", accent2: "#9ad8c8", accentText: "#0f1a26",
+    pageBg: "linear-gradient(180deg, #273447 0%, transparent 420px)",
+  },
+  { id: "midnight-gold", name: "Midnight Gold", note: "Near-black with warm gold", group: "Modern", scheme: "dark", bg: "#0f1014", bg2: "#17181e", panel: "#1b1c23", border: "#2c2d36", text: "#f2efe8", muted: "#a19c90", accent: "#f2b84b", accent2: "#f28c38", accentText: "#1a1206" },
+  { id: "nord", name: "Nord", note: "Arctic blue-grey, frosty accents", group: "Modern", scheme: "dark", bg: "#2e3440", bg2: "#3b4252", panel: "#3b4252", border: "#4c566a", text: "#eceff4", muted: "#c0c8d6", accent: "#88c0d0", accent2: "#b48ead", accentText: "#1d2129" },
+  { id: "deep-ocean", name: "Deep Ocean", note: "Dark navy with neon reef colours", group: "Modern", scheme: "dark", bg: "#070b1d", bg2: "#0d1430", panel: "#111a3a", border: "#1f2b57", text: "#e6ecff", muted: "#8f9cc8", accent: "#22d3ee", accent2: "#f43f8e", accentText: "#041018" },
+  { id: "daylight", name: "Daylight", note: "Clean and bright", group: "Modern", scheme: "light", bg: "#f4f5f9", bg2: "#ffffff", panel: "#ffffff", border: "#dde1ea", text: "#171a21", muted: "#5d6576", accent: "#d9731a", accent2: "#2563eb", accentText: "#ffffff", glow: "0 6px 20px rgba(30, 30, 60, 0.08)" },
+  { id: "dracula", name: "Dracula", note: "Classic dark purple and pink", group: "Modern", scheme: "dark", bg: "#282a36", bg2: "#303241", panel: "#343746", border: "#44475a", text: "#f8f8f2", muted: "#b6b9cf", accent: "#bd93f9", accent2: "#ff79c6", accentText: "#1b1530" },
+  { id: "tokyo-night", name: "Tokyo Night", note: "Deep indigo city lights", group: "Modern", scheme: "dark", bg: "#1a1b26", bg2: "#1f2335", panel: "#24283b", border: "#33395a", text: "#c0caf5", muted: "#8a92b8", accent: "#7aa2f7", accent2: "#bb9af7", accentText: "#11131c" },
+  { id: "gruvbox", name: "Gruvbox", note: "Warm retro-modern browns", group: "Modern", scheme: "dark", bg: "#282828", bg2: "#32302f", panel: "#3c3836", border: "#504945", text: "#ebdbb2", muted: "#bdae93", accent: "#fabd2f", accent2: "#fe8019", accentText: "#1d2021" },
+  { id: "solarized", name: "Solarized Dark", note: "Teal-blue base, measured accents", group: "Modern", scheme: "dark", bg: "#002b36", bg2: "#073642", panel: "#073642", border: "#0f4a57", text: "#eee8d5", muted: "#93a1a1", accent: "#2aa198", accent2: "#b58900", accentText: "#002b36" },
+  { id: "mocha", name: "Mocha", note: "Soft pastels on dark espresso", group: "Modern", scheme: "dark", bg: "#1e1e2e", bg2: "#232336", panel: "#2a2a3d", border: "#3b3b54", text: "#cdd6f4", muted: "#a6adc8", accent: "#cba6f7", accent2: "#f5c2e7", accentText: "#1e1e2e" },
+  { id: "midnight", name: "Midnight", note: "Plain dark with a blue accent", group: "Modern", scheme: "dark", radius: 10, bg: "#0e1116", bg2: "#161b22", panel: "#161b22", border: "#2a313c", text: "#e6edf3", muted: "#8b949e", accent: "#4c9aff", accent2: "#a371f7", accentText: "#ffffff" },
+
+  // ---- Retro ----
+  { id: "doom", name: "Inferno", note: "Hell-red with molten gold, 90s shooter", group: "Retro", scheme: "dark", radius: 4, bg: "#160606", bg2: "#200909", panel: "#2a0c0c", border: "#4a1616", text: "#f6e3d3", muted: "#c29a8a", accent: "#f4b63f", accent2: "#e53b2c", accentText: "#1a0503" },
+  { id: "monochrome", name: "Monochrome", note: "Black and white, nothing else", group: "Retro", scheme: "dark", radius: 2, bg: "#0a0a0a", bg2: "#121212", panel: "#161616", border: "#333333", text: "#f2f2f2", muted: "#a0a0a0", accent: "#ffffff", accent2: "#9a9a9a", accentText: "#000000" },
+  { id: "arcade-wood", name: "Arcade Cabinet", note: "Woodgrain brown and brass", group: "Retro", scheme: "dark", radius: 6, bg: "#1b130b", bg2: "#241a10", panel: "#2c2014", border: "#4a3721", text: "#f4e6cf", muted: "#c3a985", accent: "#e8a33d", accent2: "#c76a2b", accentText: "#1b1006" },
+  { id: "synthwave", name: "Synthwave '84", note: "Hot pink and sunset orange on purple", group: "Retro", scheme: "dark", bg: "#1a0b2e", bg2: "#22103b", panel: "#2a1446", border: "#4a2575", text: "#fbeaff", muted: "#c9a9e0", accent: "#ff3e9a", accent2: "#ffb347", accentText: "#1a0612",
+    pageBg: "linear-gradient(180deg, #2b0f4a 0%, transparent 380px)" },
+  { id: "vaporwave", name: "Vaporwave", note: "Cyan and pink on electric indigo", group: "Retro", scheme: "dark", bg: "#170f3f", bg2: "#1f1552", panel: "#261a63", border: "#3e2d91", text: "#f2edff", muted: "#b6a9ea", accent: "#21e6ff", accent2: "#ff71ce", accentText: "#06142a" },
+  { id: "matrix", name: "Terminal Green", note: "Phosphor green CRT", group: "Retro", scheme: "dark", radius: 0, font: MONO, bg: "#020a03", bg2: "#041006", panel: "#061608", border: "#0f3a14", text: "#b6ffb8", muted: "#5fbf66", accent: "#39ff6a", accent2: "#a6ff4d", accentText: "#001a05" },
+  { id: "amber", name: "Amber Terminal", note: "Warm amber monochrome monitor", group: "Retro", scheme: "dark", radius: 0, font: MONO, bg: "#100800", bg2: "#170c01", panel: "#1d1002", border: "#4a2a05", text: "#ffd08a", muted: "#c48a3a", accent: "#ffb000", accent2: "#ff7a00", accentText: "#1a0d00" },
+  { id: "cyberpunk", name: "Cyberpunk", note: "Acid yellow and magenta on black", group: "Retro", scheme: "dark", radius: 0, bg: "#0b0b10", bg2: "#121219", panel: "#16161f", border: "#2a2a3a", text: "#f4f4f8", muted: "#9b9bb0", accent: "#fcee0a", accent2: "#ff2a6d", accentText: "#0b0b10" },
+  { id: "c64", name: "Commodore 64", note: "READY. Light blue on violet", group: "Retro", scheme: "dark", radius: 0, font: MONO, bg: "#40318d", bg2: "#4b3b9e", panel: "#3a2c80", border: "#7869c4", text: "#d8d2ff", muted: "#a59cf0", accent: "#7ce0ff", accent2: "#a4f0a0", accentText: "#1e1650" },
+  { id: "gameboy", name: "Pocket Green", note: "Four shades of handheld green", group: "Retro", scheme: "light", radius: 2, font: MONO, bg: "#9bbc0f", bg2: "#8bac0f", panel: "#a9c71f", border: "#306230", text: "#0f380f", muted: "#306230", accent: "#0f380f", accent2: "#306230", accentText: "#9bbc0f",
+    glow: "none" },
+  { id: "classic-desktop", name: "Classic Desktop", note: "Grey windows and navy title bars", group: "Retro", scheme: "light", radius: 0, bg: "#c3c3c3", bg2: "#d4d0c8", panel: "#d4d0c8", border: "#808080", text: "#000000", muted: "#404040", accent: "#000080", accent2: "#1084d0", accentText: "#ffffff", glow: "inset -1px -1px #404040, inset 1px 1px #ffffff" },
+];
+
+export const THEMES = DEFS.map(({ id, name, note, group, bg, panel, accent, accent2 }) => ({ id, name, note, group, swatch: [bg, panel, accent, accent2] as const }));
+export type ThemeId = string;
+
+function tokens(t: ThemeDef): Record<string, string> {
+  const dark = t.scheme === "dark";
+  return {
+    "--bg": t.bg,
+    "--bg-2": t.bg2,
+    "--panel": t.panel,
+    "--panel-solid": t.panel,
+    "--border": t.border,
+    "--text": t.text,
+    "--muted": t.muted,
+    "--accent": t.accent,
+    "--accent-2": t.accent2,
+    "--accent-text": t.accentText ?? (dark ? "#0b0b10" : "#ffffff"),
+    "--good": dark ? "#59e38f" : "#11804a",
+    "--warn": dark ? "#ffd166" : "#8a5b00",
+    "--bad": dark ? "#ff5c7a" : "#b3123a",
+    "--radius": `${t.radius ?? 14}px`,
+    "--glow": t.glow ?? (dark ? `0 0 22px color-mix(in srgb, ${t.accent} 30%, transparent)` : "0 6px 20px rgba(0, 0, 0, 0.08)"),
+    "--page-bg": t.pageBg ? (t.pageBg.includes("gradient") ? `${t.pageBg}, ${t.bg}` : t.pageBg) : t.bg,
+    "--font": t.font ?? '"Inter", "Segoe UI", system-ui, -apple-system, sans-serif',
+  };
+}
+
+function apply(id: string) {
+  const t = DEFS.find((d) => d.id === id) ?? DEFS[0]!;
+  const root = document.documentElement;
+  for (const [k, v] of Object.entries(tokens(t))) root.style.setProperty(k, v);
+  root.style.colorScheme = t.scheme;
+  root.dataset.theme = t.id;
+  root.dataset.scheme = t.scheme;
+}
+
+function read(key: string, fallback: string): string {
+  try {
+    return localStorage.getItem(key) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function write(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // private mode: the choice just isn't remembered
+  }
+}
+
+/** Theme and touch mode live on <html>; the theme as CSS variables, touch as a data attribute. */
+export function useTheme() {
+  const [theme, setTheme] = useState<ThemeId>(() => read("gm-theme", "wavelength"));
+  const coarse = typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches;
+  const [touch, setTouch] = useState<"on" | "off">(() => (read("gm-touch", coarse ? "on" : "off") as "on" | "off"));
+
+  useEffect(() => {
+    apply(theme);
+    write("gm-theme", theme);
+  }, [theme]);
+  useEffect(() => {
+    document.documentElement.dataset.touch = touch;
+    write("gm-touch", touch);
+  }, [touch]);
+
+  return { theme, setTheme, touch, setTouch };
+}

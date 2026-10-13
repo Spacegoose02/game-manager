@@ -1,0 +1,70 @@
+import "./privileges.js";
+import { access, constants, mkdir } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { buildApp } from "./app.js";
+import { FolderWatcher } from "./catalog/watcher.js";
+import { loadConfig } from "./config.js";
+import { openDatabase } from "./db/database.js";
+
+const config = loadConfig();
+const dbFile = path.join(config.dataDir, "game-manager.db");
+await checkWritable(config.dataDir);
+const db = openDatabase(dbFile);
+
+// The built web UI sits next to the server in the image (see Dockerfile).
+const webDir = process.env.GM_WEB_DIR || path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../web/dist");
+const { app, ctx } = buildApp(config, db, { webDir });
+
+if (ctx.users.count() === 0 && config.admin.username && config.admin.password) {
+  await ctx.users.create({ username: config.admin.username, password: config.admin.password, role: "admin" });
+  app.log.info({ username: config.admin.username }, "Created the first admin from GM_ADMIN_USERNAME");
+}
+if (ctx.users.count() === 0) app.log.warn("No accounts yet: open the web UI to create the first admin.");
+if (config.oidc.issuer && !config.publicUrl) app.log.warn("GM_OIDC_ISSUER is set but GM_PUBLIC_URL is not; single sign-on stays off.");
+
+if (config.metadataAuto) ctx.library.onScanned((games) => ctx.metadata.queueMissing(games));
+await ctx.library.rescan();
+app.log.info({ games: (await ctx.library.stats()).gameCount, gamesDir: config.gamesDir, metadata: ctx.metadata.status().providers }, "Library scanned");
+
+const rescan = () => ctx.library.rescan().catch((err) => app.log.error(err, "Rescan failed"));
+if (config.watch) {
+  const watcher = new FolderWatcher(config.gamesDir, rescan, 15_000, (m) => app.log.warn(m));
+  if (watcher.start()) app.log.info("Watching the games folder for changes");
+}
+if (config.scanIntervalMinutes > 0) setInterval(rescan, config.scanIntervalMinutes * 60_000).unref();
+setInterval(() => ctx.auth.pruneSessions(), 6 * 3600_000).unref();
+// Import finished torrent/usenet downloads into the library.
+setInterval(() => ctx.downloads.reconcile().catch((err) => app.log.warn(err, "Download import failed")), 60_000).unref();
+
+const shutdown = async () => {
+  await app.close();
+  db.close();
+  process.exit(0);
+};
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
+
+await app.listen({ host: config.host, port: config.port });
+
+/** Fails with a readable explanation instead of SQLite's "unable to open database file". */
+async function checkWritable(dir: string): Promise<void> {
+  try {
+    await mkdir(dir, { recursive: true });
+    await access(dir, constants.W_OK);
+  } catch (err) {
+    const uid = process.getuid?.() ?? "?";
+    const gid = process.getgid?.() ?? "?";
+    console.error(
+      [
+        `Game Manager can't write to its data folder ${dir} (running as uid ${uid}, gid ${gid}).`,
+        `  Reason: ${(err as Error).message}`,
+        "  Fix one of these:",
+        "  - Remove --user from the container's Extra Parameters. Started normally, the container makes",
+        "    the data folder belong to PUID:PGID (default 99:100, Unraid's nobody:users) by itself.",
+        `  - Or, on the host, give the folder mapped to /data to this user: chown -R ${uid}:${gid} <that folder>`,
+      ].join("\n"),
+    );
+    process.exit(1);
+  }
+}

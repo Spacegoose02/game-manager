@@ -1,0 +1,28 @@
+{
+  "name": "@game-manager/client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "gm": "dist/src/cli.js"
+  },
+  "dependencies": {
+    "@game-manager/shared": "0.1.0",
+    "7zip-bin": "^5.2.0"
+  },
+  "devDependencies": {
+    "@game-manager/server": "0.1.0",
+    "@yao-pkg/pkg": "^6.6.0",
+    "esbuild": "^0.25.0"
+  },
+  "scripts": {
+    "package": "node scripts/package.mjs",
+    "package:win": "node scripts/package.mjs win",
+    "package:linux": "node scripts/package.mjs linux"
+  },
+  "exports": {
+    ".": "./dist/src/engine.js",
+    "./engine": "./dist/src/engine.js"
+  },
+  "main": "dist/src/engine.js"
+}

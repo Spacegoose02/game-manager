@@ -1,0 +1,12 @@
+<UserControl x:Class="GameManagerLibrary.GameManagerSettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel Margin="20">
+        <TextBlock Text="Server address (for example http://tower:8080)" Margin="0,0,0,4" />
+        <TextBox Text="{Binding Settings.ServerUrl}" Margin="0,0,0,12" />
+        <TextBlock Text="Personal token (Game Manager, Profile, Devices and tokens, Create)" Margin="0,0,0,4" />
+        <TextBox Text="{Binding Settings.ApiToken}" Margin="0,0,0,12" />
+        <TextBlock TextWrapping="Wrap" Opacity="0.8"
+                   Text="Installs are handed to the Game Manager desktop app, which downloads, unpacks and reports back. Playnite picks the game up as installed when it finishes, and play time is sent to your Game Manager profile." />
+    </StackPanel>
+</UserControl>

@@ -1,0 +1,254 @@
+import { createHash } from "node:crypto";
+import { statfs } from "node:fs/promises";
+import type { ControllerSupport, GameDetail, GameMetadata, GameSummary, LibraryStats } from "@game-manager/shared";
+import { json, now, type Db } from "../db/database.js";
+import { kidSafeFromRatings } from "../metadata/ratings.js";
+import { scanLibrary, type ScannedGame } from "./scanner.js";
+
+export interface GameQuery {
+  search?: string;
+  genre?: string;
+  controller?: "full" | "partial" | "any";
+  kidSafe?: boolean;
+  /** Only games no metadata provider has matched yet (admin clean-up list). */
+  missingMetadata?: boolean;
+  sort?: "title" | "added" | "release" | "rating" | "size";
+  order?: "asc" | "desc";
+  limit?: number;
+}
+
+interface GameRow {
+  id: string;
+  added_at: string;
+  title_override: string | null;
+  kid_safe_override: number | null;
+  controller_override: string | null;
+  cover_override: string | null;
+  background_override: string | null;
+}
+
+interface MetadataRow {
+  game_id: string;
+  provider: string;
+  provider_id: string;
+  name: string;
+  summary: string | null;
+  cover_url: string | null;
+  screenshots: string;
+  genres: string;
+  themes: string;
+  game_modes: string;
+  release_date: string | null;
+  rating: number | null;
+  age_ratings: string;
+  controller_support: string | null;
+  steam_app_id: string | null;
+  locked: number;
+  fetched_at: string;
+}
+
+export function metadataFromRow(row: MetadataRow): GameMetadata {
+  return {
+    provider: row.provider,
+    providerId: row.provider_id,
+    name: row.name,
+    summary: row.summary,
+    coverUrl: row.cover_url,
+    screenshots: json(row.screenshots, []),
+    genres: json(row.genres, []),
+    themes: json(row.themes, []),
+    gameModes: json(row.game_modes, []),
+    releaseDate: row.release_date,
+    rating: row.rating,
+    ageRatings: json(row.age_ratings, []),
+    controllerSupport: (row.controller_support as ControllerSupport | null) ?? null,
+    steamAppId: row.steam_app_id,
+    locked: row.locked === 1,
+    fetchedAt: row.fetched_at,
+  };
+}
+
+/**
+ * The catalog. File lists come from scanning the games folder (the source of truth);
+ * the database adds first-seen dates, admin overrides and metadata.
+ */
+export class Library {
+  private scanned = new Map<string, ScannedGame>();
+  private lastScanAt: Date | null = null;
+  private lastScanMs: number | null = null;
+  private scanning: Promise<void> | null = null;
+  private listeners: Array<(games: ScannedGame[]) => void> = [];
+
+  constructor(
+    private readonly db: Db,
+    readonly gamesDir: string,
+  ) {}
+
+  /** Called after every scan; the metadata service uses it to pick up new games. */
+  onScanned(listener: (games: ScannedGame[]) => void): void {
+    this.listeners.push(listener);
+  }
+
+  /** Runs a scan, or joins the one already running. */
+  rescan(): Promise<void> {
+    this.scanning ??= (async () => {
+      const started = Date.now();
+      try {
+        const games = await scanLibrary(this.gamesDir);
+        this.sync(games);
+        this.scanned = new Map(games.map((g) => [g.id, g]));
+        this.lastScanAt = new Date();
+        this.lastScanMs = Date.now() - started;
+      } finally {
+        this.scanning = null;
+      }
+      const games = [...this.scanned.values()];
+      for (const l of this.listeners) l(games);
+    })();
+    return this.scanning;
+  }
+
+  private sync(games: ScannedGame[]): void {
+    const ts = now();
+    const insert = this.db.prepare(
+      "INSERT INTO games (id, source, added_at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET removed_at = NULL",
+    );
+    this.db.exec("BEGIN");
+    try {
+      for (const g of games) insert.run(g.id, g.source, ts);
+      const present = new Set(games.map((g) => g.id));
+      const known = this.db.prepare("SELECT id FROM games WHERE removed_at IS NULL").all() as Array<{ id: string }>;
+      const markRemoved = this.db.prepare("UPDATE games SET removed_at = ? WHERE id = ?");
+      for (const { id } of known) if (!present.has(id)) markRemoved.run(ts, id);
+      this.db.exec("COMMIT");
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
+  }
+
+  scannedGame(id: string): ScannedGame | undefined {
+    return this.scanned.get(id);
+  }
+
+  allScanned(): ScannedGame[] {
+    return [...this.scanned.values()];
+  }
+
+  private rows(): { games: Map<string, GameRow>; meta: Map<string, MetadataRow> } {
+    const games = new Map(
+      (this.db.prepare("SELECT id, added_at, title_override, kid_safe_override, controller_override, cover_override, background_override FROM games").all() as unknown as GameRow[]).map(
+        (r) => [r.id, r],
+      ),
+    );
+    const meta = new Map((this.db.prepare("SELECT * FROM metadata").all() as unknown as MetadataRow[]).map((r) => [r.game_id, r]));
+    return { games, meta };
+  }
+
+  private view(g: ScannedGame, row: GameRow | undefined, metaRow: MetadataRow | undefined): GameDetail {
+    const metadata = metaRow ? metadataFromRow(metaRow) : null;
+    const kidSafe =
+      row?.kid_safe_override != null ? row.kid_safe_override === 1 : metadata ? kidSafeFromRatings(metadata.ageRatings) : null;
+    const { files, ...base } = g;
+    return {
+      ...base,
+      title: row?.title_override || metadata?.name || g.title,
+      addedAt: row?.added_at ?? new Date(0).toISOString(),
+      coverUrl: imageUrl(g.id, "cover", row?.cover_override ?? metadata?.coverUrl ?? (metadata?.steamAppId ? "steam" : null)),
+      backgroundUrl: imageUrl(g.id, "background", row?.background_override ?? metadata?.screenshots[0] ?? (metadata?.steamAppId ? "steam" : null)),
+      genres: metadata?.genres ?? [],
+      releaseYear: metadata?.releaseDate ? Number(metadata.releaseDate.slice(0, 4)) : null,
+      rating: metadata?.rating != null ? Math.round(metadata.rating) : null,
+      controllerSupport: (row?.controller_override as ControllerSupport | null) ?? metadata?.controllerSupport ?? null,
+      kidSafe,
+      files,
+      metadata,
+      overrides: {
+        title: row?.title_override ?? null,
+        kidSafe: row?.kid_safe_override == null ? null : row.kid_safe_override === 1,
+        controllerSupport: (row?.controller_override as ControllerSupport | null) ?? null,
+        cover: row?.cover_override ?? null,
+        background: row?.background_override ?? null,
+      },
+    };
+  }
+
+  get(id: string): GameDetail | undefined {
+    const g = this.scanned.get(id);
+    if (!g) return undefined;
+    const row = this.db.prepare("SELECT id, added_at, title_override, kid_safe_override, controller_override, cover_override, background_override FROM games WHERE id = ?").get(id) as
+      | GameRow
+      | undefined;
+    const meta = this.db.prepare("SELECT * FROM metadata WHERE game_id = ?").get(id) as MetadataRow | undefined;
+    return this.view(g, row, meta);
+  }
+
+  list(query: GameQuery = {}): GameSummary[] {
+    const { games, meta } = this.rows();
+    const q = query.search?.trim().toLowerCase();
+    const genre = query.genre?.toLowerCase();
+    let out: GameSummary[] = [];
+    for (const g of this.scanned.values()) {
+      const { files: _f, metadata: _m, overrides: _o, backgroundUrl: _b, ...summary } = this.view(g, games.get(g.id), meta.get(g.id));
+      if (q && !summary.title.toLowerCase().includes(q) && !summary.source.toLowerCase().includes(q)) continue;
+      if (genre && !summary.genres.some((x) => x.toLowerCase() === genre)) continue;
+      if (query.kidSafe && summary.kidSafe !== true) continue;
+      if (query.missingMetadata && meta.has(g.id)) continue;
+      if (query.controller === "full" && summary.controllerSupport !== "full") continue;
+      if (query.controller === "partial" && summary.controllerSupport !== "partial" && summary.controllerSupport !== "full") continue;
+      if (query.controller === "any" && summary.controllerSupport !== "partial" && summary.controllerSupport !== "full") continue;
+      out.push(summary);
+    }
+    const dir = query.order === "desc" ? -1 : 1;
+    const by = query.sort ?? "title";
+    const key = (s: GameSummary): string | number =>
+      by === "added" ? s.addedAt : by === "release" ? (s.releaseYear ?? 0) : by === "rating" ? (s.rating ?? -1) : by === "size" ? s.sizeBytes : s.title.toLowerCase();
+    out.sort((a, b) => {
+      const ka = key(a);
+      const kb = key(b);
+      const c = typeof ka === "number" ? ka - (kb as number) : ka.localeCompare(kb as string);
+      return c * dir || a.title.localeCompare(b.title);
+    });
+    if (query.limit) out = out.slice(0, query.limit);
+    return out;
+  }
+
+  /** Distinct genres with counts, for filter menus. */
+  genres(kidSafeOnly = false): Array<{ name: string; count: number }> {
+    const counts = new Map<string, number>();
+    for (const g of this.list({ kidSafe: kidSafeOnly })) for (const name of g.genres) counts.set(name, (counts.get(name) ?? 0) + 1);
+    return [...counts].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  }
+
+  setOverrides(id: string, o: { title?: string | null; kidSafe?: boolean | null; controller?: ControllerSupport | null }): void {
+    if (o.title !== undefined) this.db.prepare("UPDATE games SET title_override = ? WHERE id = ?").run(o.title || null, id);
+    if (o.kidSafe !== undefined) this.db.prepare("UPDATE games SET kid_safe_override = ? WHERE id = ?").run(o.kidSafe === null ? null : o.kidSafe ? 1 : 0, id);
+    if (o.controller !== undefined) this.db.prepare("UPDATE games SET controller_override = ? WHERE id = ?").run(o.controller, id);
+  }
+
+  async stats(): Promise<LibraryStats> {
+    let disk: LibraryStats["disk"] = null;
+    try {
+      const s = await statfs(this.gamesDir);
+      disk = { freeBytes: s.bavail * s.bsize, totalBytes: s.blocks * s.bsize };
+    } catch {
+      disk = null;
+    }
+    let totalBytes = 0;
+    for (const g of this.scanned.values()) totalBytes += g.sizeBytes;
+    return {
+      gameCount: this.scanned.size,
+      totalBytes,
+      lastScanAt: this.lastScanAt?.toISOString() ?? null,
+      lastScanMs: this.lastScanMs,
+      disk,
+    };
+  }
+}
+
+/** Server URL of a game image; the version changes whenever the source does, so browsers refetch. */
+function imageUrl(id: string, kind: "cover" | "background", source: string | null): string | null {
+  if (!source) return null;
+  const v = createHash("sha1").update(source).digest("hex").slice(0, 8);
+  return `/api/games/${id}/${kind}?v=${v}`;
+}
