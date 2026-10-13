@@ -54,6 +54,11 @@ jobs:
       - run: npm run build
       - run: npm run dist:${{ matrix.target }} -w @game-manager/desktop
       - run: npm run package:${{ matrix.target }} -w @game-manager/client
+      # The CLI needs the 7za beside it, so ship each platform folder as one archive.
+      - if: matrix.target == 'win'
+        run: Compress-Archive -Path packages/client/release/win-x64/* -DestinationPath packages/client/release/gm-win-x64.zip
+      - if: matrix.target == 'linux'
+        run: tar -czf packages/client/release/gm-linux-x64.tar.gz -C packages/client/release/linux-x64 .
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.target }}
@@ -61,8 +66,7 @@ jobs:
             packages/desktop/release/*.exe
             packages/desktop/release/*.AppImage
             packages/desktop/release/*.deb
-            packages/client/release/*/gm
-            packages/client/release/*/gm.exe
+            packages/client/release/gm-*
 
   playnite:
     runs-on: windows-latest
