@@ -1,9 +1,13 @@
 {
   "name": "@game-manager/desktop",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Game Manager desktop app for Windows and Linux",
-  "author": "underwood02",
+  "homepage": "https://github.com/Spacegoose02/game-manager",
+  "author": {
+    "name": "Spacegoose02",
+    "email": "208424520+Spacegoose02@users.noreply.github.com"
+  },
   "main": "dist/main.cjs",
   "scripts": {
     "build": "tsc -p . && node scripts/bundle.mjs",
@@ -13,7 +17,7 @@
     "dist:linux": "npm run build && electron-builder --linux --publish never"
   },
   "dependencies": {
-    "@game-manager/client": "0.3.0"
+    "@game-manager/client": "0.3.1"
   },
   "devDependencies": {
     "electron": "44.7.0",
@@ -60,7 +64,8 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "perMachine": false
+      "perMachine": false,
+      "artifactName": "GameManager-Setup-${version}.${ext}"
     },
     "linux": {
       "target": [
@@ -72,9 +77,13 @@
       "mimeTypes": [
         "x-scheme-handler/gamemanager"
       ],
-      "executableName": "game-manager"
+      "executableName": "game-manager",
+      "maintainer": "Spacegoose02 <208424520+Spacegoose02@users.noreply.github.com>"
     },
     "artifactName": "GameManager-${version}-${os}-${arch}.${ext}",
-    "publish": null
+    "publish": null,
+    "portable": {
+      "artifactName": "GameManager-${version}-portable.${ext}"
+    }
   }
 }
