@@ -1,7 +1,7 @@
 import { mkdir, readdir, rename, rm, statfs, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { groupArchiveSets, safeFolderName, type GameDetail, type GameSummary } from "@game-manager/shared";
+import { groupArchiveSets, safeFolderName, type GameDetail, type GameSummary } from "@lootden/shared";
 import type { GameServerClient } from "./api.js";
 import { downloadFile } from "./downloader.js";
 import { extractArchive, findSevenZip } from "./extractor.js";
@@ -27,6 +27,8 @@ export interface InstallOptions {
   /** Aborting stops the download; the .part file stays so the next install resumes. */
   signal?: AbortSignal;
   onEvent?: (event: InstallEvent) => void;
+  /** False for scratch downloads (preparing a disc game) that shouldn't count as an install. */
+  report?: boolean;
 }
 
 /** Resolves a user's argument to one game: exact id, exact title, then a unique partial title match. */
@@ -120,7 +122,7 @@ export async function installGame(api: GameServerClient, gameId: string, opts: I
       2,
     ) + "\n",
   );
-  await api.reportActivity({ gameId: game.id, device: opts.device ?? os.hostname(), event: "installed", installPath: gameDir });
+  if (opts.report !== false) await api.reportActivity({ gameId: game.id, device: opts.device ?? os.hostname(), event: "installed", installPath: gameDir });
   emit({ type: "done", gameDir });
   return gameDir;
 }

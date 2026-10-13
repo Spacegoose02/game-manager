@@ -73,7 +73,7 @@ namespace GameManagerLibrary
             var text = await res.Content.ReadAsStringAsync().ConfigureAwait(false);
             if (!res.IsSuccessStatusCode)
             {
-                throw new Exception($"Game Manager server returned {(int)res.StatusCode} for {path}: {text}");
+                throw new Exception($"LootDen server returned {(int)res.StatusCode} for {path}: {text}");
             }
             return text;
         }

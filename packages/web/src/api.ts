@@ -2,11 +2,13 @@ import type {
   ApiTokenInfo,
   AuthProviders,
   GameDetail,
+  GameListing,
   GameSummary,
   LibraryStats,
+  SaveBackup,
   User,
   UserGameState,
-} from "@game-manager/shared";
+} from "@lootden/shared";
 
 export class ApiError extends Error {
   constructor(
@@ -36,7 +38,7 @@ export interface Me {
 }
 
 export interface HomeData {
-  featured: GameSummary[];
+  featured: Array<GameSummary & { backgroundUrl: string | null; blurb: string | null }>;
   sections: Array<{ id: string; title: string; games: GameSummary[] }>;
 }
 
@@ -80,7 +82,11 @@ export interface Connectors {
   qbittorrent: { url: string; username: string; password: string; category: string; savePath: string };
   sabnzbd: { url: string; apiKey: string; category: string };
   prowlarr: { url: string; apiKey: string; categories: number[] };
-  import: { mode: "copy" | "move" | "off"; pathMappings: Array<{ from: string; to: string }> };
+  import: {
+    mode: "copy" | "move" | "off";
+    pathMappings: Array<{ from: string; to: string }>;
+    tidy: { stripJunk: boolean; extract: boolean; repack: "zip" | "folder" };
+  };
 }
 
 export interface SearchResult {
@@ -147,6 +153,27 @@ export interface ClientFile {
   kind: string;
 }
 
+export interface ListingResult {
+  source: string;
+  items: GameListing[];
+}
+
+export interface Video {
+  id: string;
+  title: string;
+  url: string;
+  thumbnail: string;
+  channel: string;
+  publishedAt: string | null;
+}
+
+export interface VideoGroup {
+  id: string;
+  title: string;
+  intervalMinutes: number;
+  channels: Array<{ id: string; name: string }>;
+}
+
 async function upload<T>(method: string, path: string, body: Blob, contentType: string): Promise<T> {
   const res = await fetch(path, { method, credentials: "same-origin", headers: { "Content-Type": contentType }, body });
   const data = await res.json().catch(() => ({}));
@@ -210,6 +237,20 @@ export const api = {
   uploadClient: (file: File) => upload<ClientFile>("PUT", `/api/clients/${encodeURIComponent(file.name)}`, file, "application/octet-stream"),
   deleteClient: (name: string) => call("DELETE", `/api/clients/${encodeURIComponent(name)}`),
   fetchRelease: (repo: string) => call<{ tag: string; files: string[] }>("POST", "/api/clients/github", { repo }),
+
+  saves: (id: string) => call<SaveBackup[]>("GET", `/api/games/${id}/saves`),
+  uploadSave: (id: string, file: File) => upload<SaveBackup>("POST", `/api/games/${id}/saves?device=${encodeURIComponent("Web upload")}`, file, "application/octet-stream"),
+  deleteSave: (id: string, saveId: number) => call("DELETE", `/api/games/${id}/saves/${saveId}`),
+  setSavePath: (id: string, path: string | null) => call<GameDetail>("PUT", `/api/games/${id}/save-path`, { path }),
+  suggestSavePath: (id: string) => call<{ paths: string[] }>("GET", `/api/games/${id}/save-path/suggest`),
+
+  calendar: (days = 120, platform = "pc") => call<ListingResult>("GET", `/api/calendar${qs({ days: String(days), platform })}`),
+  discover: () => call<{ trending: ListingResult; upcoming: ListingResult }>("GET", "/api/discover"),
+  discoverSearch: (q: string) => call<GameListing[]>("GET", `/api/discover/search${qs({ q })}`),
+  videos: () => call<{ groups: Array<{ id: string; title: string; videos: Video[] }>; errors: string[] }>("GET", "/api/videos"),
+  videoGroups: () => call<VideoGroup[]>("GET", "/api/videos/groups"),
+  saveVideoGroups: (groups: Array<{ id?: string; title: string; intervalMinutes: number; channels: string[] }>) =>
+    call<VideoGroup[]>("PUT", "/api/videos/groups", { groups }),
 
   feeds: () => call<Array<{ id: string; url: string; title: string }>>("GET", "/api/news/feeds"),
   addFeed: (url: string, title?: string) => call("POST", "/api/news/feeds", { url, title }),

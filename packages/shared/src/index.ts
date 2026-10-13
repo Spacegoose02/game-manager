@@ -38,6 +38,11 @@ export interface GameSummary {
   fileCount: number;
   /** True when at least one file needs unpacking after download. */
   packed: boolean;
+  /**
+   * "disc": a disc image (ISO) and "installer": a setup program. Both are installed once
+   * on a PC with the app, then the installed folder is zipped back onto the server.
+   */
+  needsSetup: "disc" | "installer" | null;
   modifiedAt: string;
   /** When the server first saw this game. */
   addedAt: string;
@@ -85,6 +90,21 @@ export interface GameDetail extends GameSummary {
     cover: string | null;
     background: string | null;
   };
+  /**
+   * Where the game keeps saves on a player's PC, for save sync. Uses %APPDATA%,
+   * %LOCALAPPDATA%, %USERPROFILE%, %DOCUMENTS% and {game} (the install folder).
+   */
+  savePath: string | null;
+}
+
+/** A save backup a player uploaded for one game. */
+export interface SaveBackup {
+  id: number;
+  gameId: string;
+  createdAt: string;
+  size: number;
+  /** The computer it came from, as the client named it. */
+  device: string | null;
 }
 
 export interface LibraryStats {
@@ -213,6 +233,17 @@ export function groupArchiveSets(paths: string[]): ArchiveSet[] {
     .map((s) => ({ ...s, volumes: [...s.volumes].sort() }));
 }
 
+/** Disc images and setup programs that need installing once before the game can be played. */
+export function setupKindOf(files: Array<{ path: string }>): "disc" | "installer" | null {
+  const names = files.map((f) => f.path.toLowerCase());
+  if (names.some((n) => /\.(iso|mdf|nrg|cue)$/.test(n))) return "disc";
+  // Repack installers: setup.exe beside its .bin data files, at the top or one folder down.
+  const top = names.filter((n) => n.split("/").length <= 2);
+  const setup = top.some((n) => /(^|\/)(setup|install(er)?)[^/]*\.exe$/.test(n));
+  if (setup && (top.some((n) => /\.bin$/.test(n)) || files.length <= 2)) return "installer";
+  return null;
+}
+
 /** Makes a string safe to use as a single folder name on Windows and Linux. */
 export function safeFolderName(name: string): string {
   const cleaned = name
@@ -223,4 +254,25 @@ export function safeFolderName(name: string): string {
   const reserved = /^(con|prn|aux|nul|com\d|lpt\d)$/i;
   if (!cleaned || reserved.test(cleaned)) return `game-${cleaned || "untitled"}`;
   return cleaned;
+}
+
+/** A game from a metadata service that may not be in the library: release calendar and Discover. */
+export interface GameListing {
+  provider: string;
+  providerId: string;
+  name: string;
+  /** YYYY-MM-DD when the day is known. */
+  releaseDate: string | null;
+  /** The date as the service words it when the day isn't known ("Q1 2027", "Coming soon"). */
+  dateText: string | null;
+  /** Portrait cover, when the service has one. */
+  coverUrl: string | null;
+  /** Wide image for cards. */
+  imageUrl: string | null;
+  platforms: string[];
+  genres: string[];
+  /** The game's page on the service. */
+  url: string | null;
+  /** The library game with the same title, when there is one. */
+  libraryId: string | null;
 }

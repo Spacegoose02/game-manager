@@ -52,8 +52,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: npm run dist:${{ matrix.target }} -w @game-manager/desktop
-      - run: npm run package:${{ matrix.target }} -w @game-manager/client
+      - run: npm run dist:${{ matrix.target }} -w @lootden/desktop
+      - run: npm run package:${{ matrix.target }} -w @lootden/client
       # The CLI needs the 7za beside it, so ship each platform folder as one archive.
       - if: matrix.target == 'win'
         run: Compress-Archive -Path packages/client/release/win-x64/* -DestinationPath packages/client/release/gm-win-x64.zip
@@ -73,11 +73,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: dotnet build playnite/GameManagerLibrary -c Release -o playnite-out
-      - run: Compress-Archive -Path playnite-out/* -DestinationPath GameManagerLibrary-playnite.zip
+      - run: Compress-Archive -Path playnite-out/* -DestinationPath LootDen-playnite.zip
       - uses: actions/upload-artifact@v4
         with:
           name: playnite
-          path: GameManagerLibrary-playnite.zip
+          path: LootDen-playnite.zip
 
   release:
     needs: [desktop, playnite]

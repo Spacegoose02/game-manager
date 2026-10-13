@@ -1,6 +1,6 @@
 {
-  "name": "game-manager",
-  "version": "0.3.1",
+  "name": "lootden",
+  "version": "0.4.0",
   "private": true,
   "description": "Self-hosted library for DRM-free games: a Docker server that serves the library and clients that download, unpack and install games.",
   "license": "UNLICENSED",
@@ -15,13 +15,13 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsc -b packages/shared packages/server packages/client && npm run build -w @game-manager/web",
+    "build": "tsc -b packages/shared packages/server packages/client && npm run build -w @lootden/web",
     "clean": "tsc -b --clean packages/shared packages/server packages/client",
     "test": "npm run build && node --disable-warning=ExperimentalWarning --test \"packages/*/dist/test/**/*.test.js\"",
     "dev:server": "npm run build && node --disable-warning=ExperimentalWarning packages/server/dist/src/index.js",
     "gm": "node packages/client/dist/src/cli.js",
-    "dev:web": "npm run dev -w @game-manager/web",
-    "build:desktop": "npm run build -w @game-manager/desktop"
+    "dev:web": "npm run dev -w @lootden/web",
+    "build:desktop": "npm run build -w @lootden/desktop"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

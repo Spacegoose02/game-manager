@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import type { ActivityEvent, Role } from "@game-manager/shared";
+import type { ActivityEvent, Role } from "@lootden/shared";
 import { verifyPassword } from "../auth/crypto.js";
 import { HttpProblem, requireAdmin, requirePerson, type AppContext } from "../context.js";
 import { avatarSvg, randomAvatarSeed } from "../users/avatars.js";
@@ -151,7 +151,7 @@ export function yamtrackCsv(ctx: AppContext, userId: number): string {
         "",
         "",
         e.seconds > 0 ? "In progress" : "Planning",
-        "Exported from Game Manager",
+        "Exported from LootDen",
         e.first?.slice(0, 10) ?? "",
         "",
         Math.round(e.seconds / 60),

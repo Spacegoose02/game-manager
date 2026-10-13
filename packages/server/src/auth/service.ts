@@ -1,5 +1,5 @@
 import { isIP } from "node:net";
-import type { Role } from "@game-manager/shared";
+import type { Role } from "@lootden/shared";
 import type { ServerConfig } from "../config.js";
 import { now, type Db } from "../db/database.js";
 import type { UserRecord, UserRepo } from "../users/repo.js";

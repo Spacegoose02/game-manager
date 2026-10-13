@@ -1,4 +1,5 @@
 import { json, type Db } from "../db/database.js";
+import { DEFAULT_TIDY, type TidyOptions } from "./tidy.js";
 
 export interface ConnectorSettings {
   qbittorrent: { url: string; username: string; password: string; category: string; savePath: string };
@@ -9,6 +10,8 @@ export interface ConnectorSettings {
     mode: "copy" | "move" | "off";
     /** How paths reported by the download clients map to paths inside this container. */
     pathMappings: Array<{ from: string; to: string }>;
+    /** Clean-up applied while importing: junk removal, unpacking, renaming and re-zipping. */
+    tidy: TidyOptions;
   };
 }
 
@@ -17,7 +20,7 @@ export const DEFAULT_CONNECTORS: ConnectorSettings = {
   sabnzbd: { url: "", apiKey: "", category: "games" },
   // 4000 = PC games in the Newznab/Torznab category tree that Prowlarr uses.
   prowlarr: { url: "", apiKey: "", categories: [4000] },
-  import: { mode: "copy", pathMappings: [] },
+  import: { mode: "copy", pathMappings: [], tidy: DEFAULT_TIDY },
 };
 
 const KEY = "connectors";
@@ -30,7 +33,7 @@ export function loadConnectorSettings(db: Db): ConnectorSettings {
     qbittorrent: { ...DEFAULT_CONNECTORS.qbittorrent, ...stored.qbittorrent },
     sabnzbd: { ...DEFAULT_CONNECTORS.sabnzbd, ...stored.sabnzbd },
     prowlarr: { ...DEFAULT_CONNECTORS.prowlarr, ...stored.prowlarr },
-    import: { ...DEFAULT_CONNECTORS.import, ...stored.import },
+    import: { ...DEFAULT_CONNECTORS.import, ...stored.import, tidy: { ...DEFAULT_TIDY, ...stored.import?.tidy } },
   };
 }
 
@@ -41,8 +44,9 @@ export function saveConnectorSettings(db: Db, incoming: Partial<ConnectorSetting
     qbittorrent: { ...current.qbittorrent, ...incoming.qbittorrent },
     sabnzbd: { ...current.sabnzbd, ...incoming.sabnzbd },
     prowlarr: { ...current.prowlarr, ...incoming.prowlarr },
-    import: { ...current.import, ...incoming.import },
+    import: { ...current.import, ...incoming.import, tidy: { ...current.import.tidy, ...incoming.import?.tidy } },
   };
+  if (!["zip", "folder"].includes(merged.import.tidy.repack)) throw new Error("Unknown repack option; use zip or folder");
   if (merged.qbittorrent.password === SECRET) merged.qbittorrent.password = current.qbittorrent.password;
   if (merged.sabnzbd.apiKey === SECRET) merged.sabnzbd.apiKey = current.sabnzbd.apiKey;
   if (merged.prowlarr.apiKey === SECRET) merged.prowlarr.apiKey = current.prowlarr.apiKey;

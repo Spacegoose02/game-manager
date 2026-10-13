@@ -119,7 +119,7 @@ export class NewsService {
   }
 
   private async download(url: string): Promise<string> {
-    const res = await this.fetchImpl(url, { signal: AbortSignal.timeout(15_000), headers: { "User-Agent": "GameManager/0.2 (+news)" } });
+    const res = await this.fetchImpl(url, { signal: AbortSignal.timeout(15_000), headers: { "User-Agent": "LootDen/0.3 (+news)" } });
     if (!res.ok) throw new Error(`Feed answered ${res.status}`);
     return res.text();
   }

@@ -1,4 +1,4 @@
-import type { ApiTokenInfo, Role, User, UserGameState } from "@game-manager/shared";
+import type { ApiTokenInfo, Role, User, UserGameState } from "@lootden/shared";
 import { hashPassword } from "../auth/crypto.js";
 import { now, type Db } from "../db/database.js";
 import { randomAvatarSeed } from "./avatars.js";

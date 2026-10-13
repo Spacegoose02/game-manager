@@ -11,13 +11,15 @@ export function Layout() {
       <header className="topbar">
         <NavLink to="/" className="brand" aria-label="Home">
           <img src="/logo.svg" alt="" width={36} height={36} />
-          <span>Game Manager</span>
+          <span>LootDen</span>
         </NavLink>
         <nav className="nav">
           <NavLink to="/" end>
             Home
           </NavLink>
           <NavLink to="/library">Library</NavLink>
+          {!me?.user?.kidMode && <NavLink to="/discover">Discover</NavLink>}
+          {!me?.user?.kidMode && <NavLink to="/calendar">Calendar</NavLink>}
           <NavLink to="/news">News</NavLink>
           <NavLink to="/apps">Get the app</NavLink>
           {me?.role === "admin" && <NavLink to="/downloads">Downloads</NavLink>}

@@ -25,7 +25,9 @@ export type Progress =
   | { gameId: string; type: "done"; gameDir: string }
   | { gameId: string; type: "error" | "cancelled"; message: string }
   | { gameId: string; type: "playing" }
-  | { gameId: string; type: "stopped"; seconds: number };
+  | { gameId: string; type: "stopped"; seconds: number }
+  | { gameId: string; type: "saves"; backupId?: number; size?: number; error?: string }
+  | { gameId: string; type: "prepare"; message: string; done?: boolean; error?: boolean; newId?: string };
 
 /** Bridge the desktop app injects (packages/desktop/src/preload.ts). Absent in a normal browser. */
 export interface DesktopBridge {
@@ -40,10 +42,18 @@ export interface DesktopBridge {
   play(gameId: string): Promise<{ executable: string } | null>;
   uninstall(gameId: string): Promise<boolean>;
   openFolder(gameId: string): Promise<void>;
+  /** Disc/installer games: install once on this PC and upload the result. Missing in older apps. */
+  prepare?(gameId: string): Promise<GameDetailLike | null>;
+  uploadFolder?(gameId: string): Promise<GameDetailLike | null>;
+  /** Missing in desktop apps older than save sync. */
+  backupSaves?(gameId: string): Promise<{ backupId: number; size: number } | { error: string }>;
+  restoreSaves?(gameId: string, saveId: number): Promise<{ previous: string | null } | null>;
   changeServer(): Promise<void>;
   toggleFullscreen(): Promise<boolean>;
   onProgress(cb: (p: Progress) => void): () => void;
 }
+
+type GameDetailLike = { id: string };
 
 export const desktop: DesktopBridge | undefined = (window as unknown as { gameManager?: DesktopBridge }).gameManager;
 

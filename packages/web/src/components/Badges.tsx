@@ -1,4 +1,4 @@
-import type { GameSummary } from "@game-manager/shared";
+import type { GameSummary } from "@lootden/shared";
 
 export function Badges({ game, compact = false }: { game: GameSummary; compact?: boolean }) {
   return (
@@ -8,6 +8,7 @@ export function Badges({ game, compact = false }: { game: GameSummary; compact?:
       {game.kidSafe === true && <span className="badge badge-kid" title="Suitable for kids">{compact ? "★" : "Kid-safe"}</span>}
       {game.rating != null && !compact && <span className="badge">{game.rating}/100</span>}
       {game.packed && !compact && <span className="badge badge-muted" title="Unpacked automatically after download">Packed</span>}
+      {game.needsSetup && <span className="badge badge-muted" title="Install once with the app, then it installs like any other game">{game.needsSetup === "disc" ? "Disc image" : "Installer"}</span>}
     </div>
   );
 }

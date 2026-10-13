@@ -62,7 +62,9 @@ export class ClientDownloads {
       out.push({ name, size: s.size, modifiedAt: s.mtime.toISOString(), ...describe(name) });
     }
     const order = { windows: 0, linux: 1, playnite: 2, other: 3 };
-    return out.sort((a, b) => order[a.platform] - order[b.platform] || a.name.localeCompare(b.name));
+    // Per platform, the desktop app comes before the command-line client and other files.
+    const rank = (f: ClientFile) => (f.kind.startsWith("Desktop") ? 0 : 1);
+    return out.sort((a, b) => order[a.platform] - order[b.platform] || rank(a) - rank(b) || a.name.localeCompare(b.name));
   }
 
   path(name: string): string {
@@ -83,13 +85,13 @@ export class ClientDownloads {
   }
 
   /**
-   * Downloads the assets of a GitHub repository's latest release (e.g. "you/game-manager"),
+   * Downloads the assets of a GitHub repository's latest release (e.g. "you/lootden"),
    * replacing files with the same name. Returns what was fetched.
    */
   async fetchRelease(repo: string): Promise<{ tag: string; files: string[] }> {
     if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('Enter the repository as "owner/name"');
     const res = await this.fetchImpl(`https://api.github.com/repos/${repo}/releases/latest`, {
-      headers: { Accept: "application/vnd.github+json", "User-Agent": "game-manager" },
+      headers: { Accept: "application/vnd.github+json", "User-Agent": "lootden" },
       signal: AbortSignal.timeout(20_000),
     });
     if (res.status === 404) throw new Error(`${repo} has no published release (or the repository is private)`);
@@ -103,7 +105,7 @@ export class ClientDownloads {
       } catch {
         continue;
       }
-      const dl = await this.fetchImpl(asset.browser_download_url, { headers: { "User-Agent": "game-manager" } });
+      const dl = await this.fetchImpl(asset.browser_download_url, { headers: { "User-Agent": "lootden" } });
       if (!dl.ok || !dl.body) throw new Error(`Downloading ${asset.name} failed (${dl.status})`);
       await this.save(name, Readable.fromWeb(dl.body as import("node:stream/web").ReadableStream));
       files.push(name);

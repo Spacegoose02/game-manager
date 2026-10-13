@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { rm } from "node:fs/promises";
 import { after, before, describe, it } from "node:test";
-import type { GameDetail } from "@game-manager/shared";
+import type { GameDetail } from "@lootden/shared";
 import { kidSafeFromRatings } from "../src/metadata/ratings.js";
 import { cleanTitle, titleSimilarity } from "../src/metadata/titles.js";
 import { makeApp, makeLibrary } from "./helpers.js";

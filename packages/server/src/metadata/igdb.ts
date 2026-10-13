@@ -1,4 +1,4 @@
-import type { AgeRating } from "@game-manager/shared";
+import type { AgeRating } from "@lootden/shared";
 import { HttpError, limitedJson, RateLimiter, type FetchLike } from "./http.js";
 import type { Candidate, MetadataProvider, ProviderResult } from "./types.js";
 
@@ -89,6 +89,25 @@ export class IgdbProvider implements MetadataProvider {
       }
       if (err instanceof HttpError && err.status === 400 && !this.legacy) {
         this.legacy = true;
+        return run();
+      }
+      throw err;
+    }
+  }
+
+  /** Raw Apicalypse query against any IGDB endpoint, with the same token handling as matching. */
+  async raw<T>(endpoint: string, body: string): Promise<T[]> {
+    const run = async () =>
+      limitedJson<T[]>(limiter, this.fetchImpl, `https://api.igdb.com/v4/${endpoint}`, {
+        method: "POST",
+        headers: { "Client-ID": this.clientId, Authorization: `Bearer ${await this.accessToken()}`, "Content-Type": "text/plain" },
+        body,
+      });
+    try {
+      return await run();
+    } catch (err) {
+      if (err instanceof HttpError && err.status === 401) {
+        this.token = null;
         return run();
       }
       throw err;

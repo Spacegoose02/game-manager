@@ -1,15 +1,22 @@
 <p align="center"><img src="packages/web/public/logo.svg" width="96" alt=""></p>
 
-# Game Manager
+# LootDen
 
-A self-hosted manager for your own DRM-free PC game library. The server runs in Docker
-(made for Unraid), and players install games from a Windows or Linux desktop app that
-downloads, unpacks zip / 7z / rar and deletes the archives afterwards.
+A raccoon's den for your loot: a self-hosted manager for your own DRM-free PC game library.
+The server runs in Docker (made for Unraid), and players install games from a Windows or
+Linux desktop app that downloads, unpacks zip / 7z / rar and deletes the archives afterwards.
+
+LootDen was called Game Manager until v0.3. Existing installs keep working: the server
+still uses an existing `game-manager.db`, the desktop app keeps its settings, the
+`gamemanager://` links still open the app, and the `GM_` environment variables are unchanged.
 
 - **Server**: scans and watches your games folder, fetches covers and details from IGDB,
   RAWG, Steam, PCGamingWiki and SteamGridDB, and serves a web UI with a featured home page,
-  filters (genre, controller support, kid-safe), gaming news and 23 themes. Admins can
-  replace any cover or background with their own image.
+  filters (genre, controller support, kid-safe), gaming news, YouTube video rows, a release
+  calendar, a Discover page for games you don't have yet, and 23 themes. Admins can replace
+  any cover or background with their own image.
+- **Save sync**: each profile backs up its saves per game to the server (automatically when
+  you close a game in the app) and restores them on another PC.
 - **Profiles**: local accounts or sign-in with TinyAuth / any OIDC provider, random gaming
   avatars, kid profiles that only see kid-safe games, and per-profile install and play-time
   tracking (exportable to Yamtrack).
@@ -17,7 +24,9 @@ downloads, unpacks zip / 7z / rar and deletes the archives afterwards.
   **Get the app** page. Pick a drive, install, play, uninstall.
   Touch mode and controller navigation for handhelds like the ROG Ally.
 - **Downloads** (admin): search Prowlarr indexers and send results to qBittorrent or SABnzbd;
-  finished downloads are imported into the library.
+  finished downloads are cleaned up (junk files removed, nested archives unpacked) and
+  imported as `Title v1.2.zip`. Disc images and installers are installed once with the app,
+  and the installed game is zipped back onto the server.
 - **Playnite plugin**: your library inside Playnite, with installs handed to the desktop app.
 
 See [ROADMAP.md](ROADMAP.md) for what is done and what is next.
@@ -127,7 +136,7 @@ npm install
 npm test              # builds everything and runs the tests
 npm run dev:server    # API on :8080; set GM_GAMES_DIR and GM_DATA_DIR to local folders first
 npm run dev:web       # web UI on :5173 with hot reload, proxying /api to :8080
-npm run build:desktop # desktop app; then: npm run dist:win -w @game-manager/desktop
+npm run build:desktop # desktop app; then: npm run dist:win -w @lootden/desktop
 ```
 
 | Folder | What's in it |
@@ -144,7 +153,7 @@ npm run build:desktop # desktop app; then: npm run dist:win -w @game-manager/des
 ## Releases
 
 Push a tag like `v0.2.0`. GitHub Actions then publishes the Docker image to
-`ghcr.io/<you>/game-manager` and attaches the Windows/Linux desktop apps, the `gm`
+`ghcr.io/<you>/lootden` and attaches the Windows/Linux desktop apps, the `gm`
 binaries and the Playnite plugin to a GitHub release.
 
 ## License

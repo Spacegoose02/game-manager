@@ -24,7 +24,7 @@ export function Apps() {
     <div className="apps">
       <h1>Get the app</h1>
       <p className="muted">
-        The Game Manager app downloads games to the drive you choose, unpacks zip, 7z and rar files and removes the archives afterwards. When it asks
+        The LootDen app downloads games to the drive you choose, unpacks zip, 7z and rar files and removes the archives afterwards. When it asks
         for a server, enter <code>{location.origin}</code>.
       </p>
       {desktop && <p className="notice">You're already using the app.</p>}

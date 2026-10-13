@@ -116,6 +116,21 @@ const MIGRATIONS: string[] = [
   ALTER TABLE games ADD COLUMN cover_override TEXT;
   ALTER TABLE games ADD COLUMN background_override TEXT;
   `,
+  `
+  -- Where a game keeps its saves on a player's PC ("%APPDATA%/Studio/Game" or "{game}/saves").
+  ALTER TABLE games ADD COLUMN save_path TEXT;
+  -- Save backups uploaded per player, so they can carry progress between devices.
+  CREATE TABLE saves (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    game_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    device TEXT,
+    file TEXT NOT NULL
+  );
+  CREATE INDEX saves_user_game ON saves(user_id, game_id, created_at);
+  `,
 ];
 
 export function openDatabase(file: string): Db {

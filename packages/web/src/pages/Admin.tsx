@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import type { GameSummary, LibraryStats, User } from "@game-manager/shared";
+import type { GameSummary, LibraryStats, User } from "@lootden/shared";
 import { api, avatarUrl, formatBytes } from "../api";
 import { AdminApps } from "../components/AdminApps";
 import { AdminIntegrations } from "../components/AdminIntegrations";
+import { AdminVideos } from "../components/AdminVideos";
 
 type MetaStatus = Awaited<ReturnType<typeof api.metadataStatus>>;
 
@@ -178,6 +179,7 @@ export function Admin() {
           <button disabled={busy}>Add feed</button>
         </form>
       </section>
+      <AdminVideos onMessage={setMsg} />
     </div>
   );
 }

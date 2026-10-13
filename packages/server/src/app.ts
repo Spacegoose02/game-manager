@@ -3,7 +3,7 @@ import path from "node:path";
 import cookie from "@fastify/cookie";
 import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance } from "fastify";
-import { API_VERSION, type HealthResponse } from "@game-manager/shared";
+import { API_VERSION, type HealthResponse } from "@lootden/shared";
 import { OidcService } from "./auth/oidc.js";
 import { AuthService, SESSION_COOKIE } from "./auth/service.js";
 import { Library } from "./catalog/library.js";
@@ -24,8 +24,13 @@ import { Integrations } from "./settings/integrations.js";
 import { ClientDownloads } from "./clients/store.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { clientRoutes } from "./routes/clients.js";
+import { saveRoutes } from "./routes/saves.js";
+import { discoverRoutes } from "./routes/discover.js";
+import { ReleaseCalendar } from "./metadata/calendar.js";
+import { VideoService } from "./news/videos.js";
+import { SaveStore } from "./saves/store.js";
 
-export const VERSION = "0.2.0";
+export const VERSION = "0.4.0";
 
 /** Routes reachable without signing in. */
 const PUBLIC = [/^\/api\/health$/, /^\/api\/auth\//, /^\/api\/avatars\//];
@@ -44,6 +49,7 @@ export function buildContext(config: ServerConfig, db: Db, log: Log, opts: Build
   const users = new UserRepo(db);
   // Applies keys and sign-on settings saved in the UI on top of the environment.
   const integrations = new Integrations(db, config);
+  const metadata = new MetadataService(db, library, config.dataDir, config, log, opts.fetchImpl);
   return {
     config,
     db,
@@ -51,9 +57,12 @@ export function buildContext(config: ServerConfig, db: Db, log: Log, opts: Build
     users,
     integrations,
     clients: new ClientDownloads(config.dataDir, opts.fetchImpl),
+    saves: new SaveStore(db, config.dataDir),
     auth: new AuthService(db, users, config),
     oidc: new OidcService(config, users),
-    metadata: new MetadataService(db, library, config.dataDir, config, log, opts.fetchImpl),
+    metadata,
+    calendar: new ReleaseCalendar(metadata, library, opts.fetchImpl),
+    videos: new VideoService(db, opts.fetchImpl),
     news: new NewsService(db, opts.fetchImpl),
     downloads: new DownloadManager(db, library, log, opts.fetchImpl),
   };
@@ -113,6 +122,8 @@ export function buildApp(config: ServerConfig, db: Db, opts: BuildOptions = {}):
   downloadRoutes(app, ctx);
   settingsRoutes(app, ctx);
   clientRoutes(app, ctx);
+  saveRoutes(app, ctx);
+  discoverRoutes(app, ctx);
 
   const webDir = opts.webDir;
   if (webDir && existsSync(path.join(webDir, "index.html"))) {

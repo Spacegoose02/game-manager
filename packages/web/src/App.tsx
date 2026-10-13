@@ -5,6 +5,8 @@ import { Layout } from "./components/Layout";
 import { installSpatialNavigation } from "./gamepad";
 import { Admin } from "./pages/Admin";
 import { Apps } from "./pages/Apps";
+import { Calendar } from "./pages/Calendar";
+import { Discover } from "./pages/Discover";
 import { Downloads } from "./pages/Downloads";
 import { GameDetail } from "./pages/GameDetail";
 import { Home } from "./pages/Home";
@@ -41,6 +43,8 @@ export function App() {
         <Route path="library" element={<Library />} />
         <Route path="games/:id" element={<GameDetail />} />
         <Route path="news" element={<News />} />
+        <Route path="discover" element={<Discover />} />
+        <Route path="calendar" element={<Calendar />} />
         <Route path="profile" element={<Profile />} />
         <Route path="admin" element={<Admin />} />
         <Route path="downloads" element={<Downloads />} />

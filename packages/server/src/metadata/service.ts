@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { GameMetadata } from "@game-manager/shared";
+import type { GameMetadata } from "@lootden/shared";
 import type { Library } from "../catalog/library.js";
 import type { ScannedGame } from "../catalog/scanner.js";
 import { now, type Db } from "../db/database.js";

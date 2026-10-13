@@ -10,7 +10,7 @@ namespace GameManagerLibrary
         private string serverUrl = "";
         private string apiToken = "";
 
-        /// <summary>Address of the Game Manager server, e.g. http://tower:8080</summary>
+        /// <summary>Address of the LootDen server, e.g. http://tower:8080</summary>
         public string ServerUrl { get => serverUrl; set => SetValue(ref serverUrl, value); }
 
         /// <summary>A personal token from Profile, Devices and tokens.</summary>
@@ -43,7 +43,7 @@ namespace GameManagerLibrary
             if (!Uri.TryCreate(Settings.ServerUrl, UriKind.Absolute, out var u) || (u.Scheme != "http" && u.Scheme != "https"))
                 errors.Add("Server address must start with http:// or https://");
             if (string.IsNullOrWhiteSpace(Settings.ApiToken))
-                errors.Add("Paste a personal token from your Game Manager profile page.");
+                errors.Add("Paste a personal token from your LootDen profile page.");
             return errors.Count == 0;
         }
     }

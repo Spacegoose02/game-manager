@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import { mapPath } from "../src/connectors/manager.js";
+import { findServerSevenZip } from "../src/connectors/tidy.js";
 import { makeApp, makeLibrary } from "./helpers.js";
 
 let root: string;
@@ -145,22 +147,37 @@ describe("download connectors", () => {
     await app.close();
   });
 
-  it("sends usenet results to SABnzbd and moves finished ones", async () => {
+  it("sends usenet results to SABnzbd, then unpacks, cleans and re-zips the finished download", async () => {
     const fake = fakeServices();
     const { app, ctx } = await makeApp(root, { apiToken: "svc" }, { fetchImpl: fake.impl });
     const headers = { authorization: "Bearer svc" };
-    const src = path.join(downloads, "complete", "Usenet Game");
+    const sevenZip = (await findServerSevenZip())!;
+    const src = path.join(downloads, "complete", "Usenet.Game.v1.2-GROUP");
+    const inner = path.join(downloads, "inner", "Usenet Game");
+    await mkdir(path.join(inner, "bin"), { recursive: true });
+    await writeFile(path.join(inner, "bin", "game.exe"), "exe");
+    await writeFile(path.join(inner, "Visit SITE-GAMES.COM.url"), "[InternetShortcut]");
     await mkdir(src, { recursive: true });
-    await writeFile(path.join(src, "data.7z"), "7z");
+    execFileSync(sevenZip.path, ["a", "-t7z", path.join(src, "data.7z"), inner], { stdio: "ignore" });
+    await writeFile(path.join(src, "Read Me.txt"), "thanks for downloading");
+    await writeFile(path.join(src, "release.nfo"), "nfo");
+    await mkdir(path.join(src, "_INSTALL TUTORIAL"));
+    await writeFile(path.join(src, "_INSTALL TUTORIAL", "step1.png"), "png");
     await app.inject({ method: "PUT", url: "/api/connectors", headers, payload: { ...SETTINGS, import: { mode: "move", pathMappings: [] } } });
 
-    const grab = await app.inject({ method: "POST", url: "/api/downloads", headers, payload: { url: "http://prowlarr:9696/1/download?apikey=x", title: "Usenet Game", protocol: "usenet" } });
+    const grab = await app.inject({ method: "POST", url: "/api/downloads", headers, payload: { url: "http://prowlarr:9696/1/download?apikey=x", title: "Usenet.Game.v1.2-GROUP", protocol: "usenet" } });
     assert.equal(grab.json().externalId, "SABnzbd_nzo_1");
     fake.sabQueue.length = 0;
-    fake.sabHistory.push({ nzo_id: "SABnzbd_nzo_1", name: "Usenet Game", bytes: 200, status: "Completed", storage: src, category: "games" });
+    fake.sabHistory.push({ nzo_id: "SABnzbd_nzo_1", name: "Usenet.Game.v1.2-GROUP", bytes: 200, status: "Completed", storage: src, category: "games" });
     await ctx.downloads.reconcile();
-    assert.equal(ctx.downloads.get(1)!.status, "imported");
-    assert.deepEqual(await readdir(path.join(root, "Usenet Game")), ["data.7z"]);
+    const record = ctx.downloads.get(1)!;
+    assert.equal(record.status, "imported", record.error ?? "");
+    assert.equal(path.basename(record.importedPath!), "Usenet Game v1.2.zip");
+    const listing = execFileSync(sevenZip.path, ["l", "-ba", "-slt", record.importedPath!]).toString();
+    const names = [...listing.matchAll(/^Path = (.*)$/gm)].map((m) => m[1]!.replace(/\\/g, "/")).sort();
+    assert.deepEqual(names, ["bin", "bin/game.exe"], "junk is gone and the wrapper folder is unwrapped");
+    assert.ok(ctx.library.list({ search: "usenet" }).length === 1);
+    assert.deepEqual((await readdir(root)).filter((n) => n.startsWith(".import")), [], "no staging folder left behind");
     await assert.rejects(stat(src), "move mode removes the source");
     await app.close();
   });
@@ -173,5 +190,20 @@ describe("download connectors", () => {
     const bad = await app.inject({ method: "POST", url: "/api/downloads", headers: { authorization: "Bearer svc" }, payload: { url: "file:///etc/passwd", title: "x", protocol: "torrent" } });
     assert.equal(bad.statusCode, 400);
     await app.close();
+  });
+});
+
+describe("download tidy rules", () => {
+  it("spots release junk but keeps game files", async () => {
+    const { isJunk, tidyName, releaseVersion } = await import("../src/connectors/tidy.js");
+    for (const junk of ["XXX-GAMES.COM.url", "Read Me.txt", "README.html", "_INSTALL TUTORIAL", "FUCKINGTORRENTS.COM.txt", "release.nfo", "game.sfv", "Thumbs.db", "Visit us.website"]) {
+      assert.ok(isJunk(junk, 0), junk);
+    }
+    for (const keep of ["game.bin", "setup.exe", "README", "data", "game.exe", "Engine.ini"]) assert.ok(!isJunk(keep, 0), keep);
+    assert.ok(!isJunk("readme.txt", 3), "a readme deep inside the game stays");
+    assert.equal(tidyName("The.Witcher.3.Wild.Hunt.v4.04-GOG"), "The Witcher 3 Wild Hunt v4.04");
+    assert.equal(tidyName("Hades_Build_123456.zip"), "Hades Build 123456");
+    assert.equal(tidyName("Celeste [FitGirl Repack]"), "Celeste");
+    assert.equal(releaseVersion("Game v1_2_3"), "1.2.3");
   });
 });

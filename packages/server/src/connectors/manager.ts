@@ -1,4 +1,4 @@
-import { cp, rename, rm, stat } from "node:fs/promises";
+import { cp, mkdir, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import type { Library } from "../catalog/library.js";
 import { now, type Db } from "../db/database.js";
@@ -7,6 +7,7 @@ import { ProwlarrClient, type SearchResult } from "./prowlarr.js";
 import { QBittorrentClient } from "./qbittorrent.js";
 import { SabnzbdClient } from "./sabnzbd.js";
 import { loadConnectorSettings, type ConnectorSettings } from "./settings.js";
+import { findServerSevenZip, tidyDownload, type TidyOptions } from "./tidy.js";
 import type { ActiveDownload, DownloadClient } from "./types.js";
 
 export interface DownloadRecord {
@@ -198,7 +199,7 @@ export class DownloadManager {
       if (!finished || settings.import.mode === "off" || !l.path) continue;
       try {
         this.db.prepare("UPDATE downloads SET status = 'importing' WHERE id = ?").run(r.id);
-        const target = await this.importPath(mapPath(l.path, settings.import.pathMappings), settings.import.mode);
+        const target = await this.importPath(mapPath(l.path, settings.import.pathMappings), settings.import.mode, r.name, settings.import.tidy, r.id);
         this.db.prepare("UPDATE downloads SET status = 'imported', imported_path = ?, imported_at = ?, error = NULL WHERE id = ?").run(target, now(), r.id);
         this.log.info({ name: r.name, target }, "Imported download into the library");
         imported = true;
@@ -213,10 +214,32 @@ export class DownloadManager {
     if (imported) await this.library.rescan();
   }
 
-  private async importPath(source: string, mode: "copy" | "move"): Promise<string> {
+  private async importPath(source: string, mode: "copy" | "move", releaseName: string, tidy: TidyOptions, id: number): Promise<string> {
     const s = await stat(source).catch(() => null);
     if (!s) throw new Error(`Finished download not found at ${source}; check the path mappings`);
-    const target = path.join(this.library.gamesDir, sanitize(path.basename(source)));
+    const tidyOn = tidy.stripJunk || tidy.extract || tidy.repack === "zip";
+    if (!tidyOn) return this.place(source, path.join(this.library.gamesDir, sanitize(path.basename(source))), mode);
+
+    // Work on a private copy in the games folder (hidden from scans), so seeding torrents stay intact.
+    const staging = path.join(this.library.gamesDir, `.import-${id}`);
+    await rm(staging, { recursive: true, force: true });
+    if (s.isDirectory()) await this.place(source, staging, mode);
+    else {
+      await mkdir(staging, { recursive: true });
+      await this.place(source, path.join(staging, path.basename(source)), mode);
+    }
+    try {
+      const report = await tidyDownload(staging, releaseName || path.basename(source), this.library.gamesDir, tidy, await findServerSevenZip());
+      this.log.info({ name: releaseName, removed: report.removed, extracted: report.extracted, warnings: report.warnings }, "Tidied download");
+      return report.target;
+    } catch (err) {
+      await rm(staging, { recursive: true, force: true });
+      throw err;
+    }
+  }
+
+  /** Moves or copies one file or folder to target, through a temporary name so half-copied games never show up. */
+  private async place(source: string, target: string, mode: "copy" | "move"): Promise<string> {
     if (await stat(target).catch(() => null)) throw new Error(`${path.basename(target)} already exists in the games folder`);
     if (mode === "move") {
       try {
@@ -226,7 +249,6 @@ export class DownloadManager {
         if ((err as NodeJS.ErrnoException).code !== "EXDEV") throw err;
       }
     }
-    // Copy into a temporary name first so a half-copied game never shows up in the library.
     const temp = `${target}.importing`;
     await cp(source, temp, { recursive: true, errorOnExist: true });
     await rename(temp, target);

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import type { GameSummary } from "@game-manager/shared";
+import type { GameSummary } from "@lootden/shared";
 import { api } from "../api";
 import { GameGrid } from "../components/GameCard";
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { GameDetail } from "@game-manager/shared";
+import type { GameDetail } from "@lootden/shared";
 import { formatBytes } from "../api";
 import { bridgeError, desktop, useDesktopGame, type Drive } from "../desktop";
 

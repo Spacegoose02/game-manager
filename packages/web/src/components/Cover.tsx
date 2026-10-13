@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { GameSummary } from "@game-manager/shared";
+import type { GameSummary } from "@lootden/shared";
 
 /** Cover art, or a generated tile with the title when there is none yet. */
 export function Cover({ game, size = "card" }: { game: Pick<GameSummary, "id" | "title" | "coverUrl">; size?: "card" | "hero" }) {

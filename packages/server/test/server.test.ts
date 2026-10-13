@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { rm } from "node:fs/promises";
 import { after, before, describe, it } from "node:test";
-import type { GameDetail, GameSummary, User } from "@game-manager/shared";
+import type { GameDetail, GameSummary, User } from "@lootden/shared";
 import { scanLibrary, titleFromSource } from "../src/catalog/scanner.js";
 import { parseRange } from "../src/routes/games.js";
 import { makeApp, makeLibrary, sessionCookie } from "./helpers.js";
@@ -179,7 +179,7 @@ describe("accounts and auth", () => {
     assert.match(csv.headers["content-type"] as string, /text\/csv/);
     const lines = csv.body.trim().split("\n");
     assert.equal(lines[0], "media_id,source,media_type,title,image,season_number,episode_number,score,status,notes,start_date,end_date,progress");
-    assert.match(lines[1]!, /^,manual,game,The Sims 4,.*,In progress,Exported from Game Manager,\d{4}-\d\d-\d\d,,40$/);
+    assert.match(lines[1]!, /^,manual,game,The Sims 4,.*,In progress,Exported from LootDen,\d{4}-\d\d-\d\d,,40$/);
     await app.close();
   });
 

@@ -1,12 +1,19 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, type NewsItem } from "../api";
+import { api, type NewsItem, type Video } from "../api";
 import { useAuth } from "../auth";
+import { VideoRow } from "../components/Videos";
 
 export function News() {
   const [items, setItems] = useState<NewsItem[] | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const { me } = useAuth();
+  const [tab, setTab] = useState<"articles" | "videos">("articles");
+  const [videos, setVideos] = useState<{ groups: Array<{ id: string; title: string; videos: Video[] }>; errors: string[] } | null>(null);
+
+  useEffect(() => {
+    if (tab === "videos" && !videos) api.videos().then(setVideos, (e: Error) => setVideos({ groups: [], errors: [e.message] }));
+  }, [tab, videos]);
 
   useEffect(() => {
     api.news().then(
@@ -21,7 +28,26 @@ export function News() {
   if (!items) return <p className="muted">Loading…</p>;
   return (
     <>
-      <h1>Gaming news</h1>
+      <div className="inline" style={{ justifyContent: "space-between" }}>
+        <h1>Gaming news</h1>
+        <div className="segmented" role="tablist">
+          {(["articles", "videos"] as const).map((t) => (
+            <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>
+              {t === "articles" ? "Articles" : "Videos"}
+            </button>
+          ))}
+        </div>
+      </div>
+      {tab === "videos" && (
+        <>
+          {!videos && <p className="muted">Loading…</p>}
+          {videos?.errors.length ? <p className="error small">Some channels failed: {videos.errors.join("; ")}</p> : null}
+          {videos?.groups.map((g) => <VideoRow key={g.id} title={g.title} videos={g.videos} />)}
+          {videos && videos.groups.length === 0 && <p className="muted">No video rows yet.{me?.role === "admin" ? " Add YouTube channels under Admin." : ""}</p>}
+        </>
+      )}
+      {tab === "articles" && (
+      <>
       {errors.length > 0 && <p className="error small">Some feeds failed: {errors.join("; ")}</p>}
       {items.length === 0 && (
         <p className="muted">
@@ -50,6 +76,8 @@ export function News() {
           </a>
         ))}
       </div>
+      </>
+      )}
     </>
   );
 }

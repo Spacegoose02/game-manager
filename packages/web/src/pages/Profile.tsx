@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import type { ApiTokenInfo, GameSummary, UserGameState } from "@game-manager/shared";
+import type { ApiTokenInfo, GameSummary, UserGameState } from "@lootden/shared";
 import { api, avatarUrl, formatPlaytime } from "../api";
 import { useAuth } from "../auth";
 import { bridgeError, desktop, type InstalledGame } from "../desktop";
@@ -91,7 +91,7 @@ export function Profile() {
           <section className="panel">
             <h2>My games</h2>
             {states.length === 0 ? (
-              <p className="muted">Nothing installed yet. Installs and play time from the Game Manager app show up here.</p>
+              <p className="muted">Nothing installed yet. Installs and play time from the LootDen app show up here.</p>
             ) : (
               <table className="table">
                 <thead>
@@ -126,7 +126,7 @@ export function Profile() {
 
           <section className="panel">
             <h2>Devices and tokens</h2>
-            <p className="muted small">Each computer signed in with the Game Manager app or <code>gm login</code> gets its own token. Revoke one to sign that device out.</p>
+            <p className="muted small">Each computer signed in with the LootDen app or <code>gm login</code> gets its own token. Revoke one to sign that device out.</p>
             <ul className="list">
               {tokens.map((t) => (
                 <li key={t.id}>

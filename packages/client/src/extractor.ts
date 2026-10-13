@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { access, chmod, constants } from "node:fs/promises";
 import path from "node:path";
 import { createRequire } from "node:module";
-import type { ArchiveKind } from "@game-manager/shared";
+import type { ArchiveKind } from "@lootden/shared";
 
 export interface SevenZip {
   path: string;

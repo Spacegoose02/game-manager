@@ -144,8 +144,8 @@ describe("client downloads", () => {
           body: {
             tag_name: "v0.3.0",
             assets: [
-              { name: "GameManager-0.3.0-win-x64.exe", browser_download_url: "https://github.com/dl/win.exe" },
-              { name: "GameManager-0.3.0-linux-x86_64.AppImage", browser_download_url: "https://github.com/dl/linux.AppImage" },
+              { name: "LootDen-0.3.0-win-x64.exe", browser_download_url: "https://github.com/dl/win.exe" },
+              { name: "LootDen-0.3.0-linux-x86_64.AppImage", browser_download_url: "https://github.com/dl/linux.AppImage" },
               { name: "checksums.txt", browser_download_url: "https://github.com/dl/sums" },
             ],
           },
@@ -165,17 +165,17 @@ describe("client downloads", () => {
     assert.equal(bad.statusCode, 400);
     assert.equal((await app.inject({ method: "PUT", url: "/api/clients/x.exe", headers: { ...asUser, "content-type": "application/octet-stream" }, payload: Buffer.from("x") })).statusCode, 403);
 
-    const gh = await app.inject({ method: "POST", url: "/api/clients/github", headers, payload: { repo: "someone/game-manager" } });
+    const gh = await app.inject({ method: "POST", url: "/api/clients/github", headers, payload: { repo: "someone/lootden" } });
     assert.equal(gh.statusCode, 200);
-    assert.deepEqual(gh.json(), { tag: "v0.3.0", files: ["GameManager-0.3.0-win-x64.exe", "GameManager-0.3.0-linux-x86_64.AppImage"] });
+    assert.deepEqual(gh.json(), { tag: "v0.3.0", files: ["LootDen-0.3.0-win-x64.exe", "LootDen-0.3.0-linux-x86_64.AppImage"] });
 
     const list = (await app.inject({ url: "/api/clients", headers: asUser })).json();
     assert.deepEqual(
       list.map((c: { name: string; platform: string }) => [c.name, c.platform]),
       [
-        ["GameManager-0.3.0-win-x64.exe", "windows"],
+        ["LootDen-0.3.0-win-x64.exe", "windows"],
         ["gm.exe", "windows"],
-        ["GameManager-0.3.0-linux-x86_64.AppImage", "linux"],
+        ["LootDen-0.3.0-linux-x86_64.AppImage", "linux"],
       ],
     );
     const dl = await app.inject({ url: "/api/clients/gm.exe", headers: asUser });

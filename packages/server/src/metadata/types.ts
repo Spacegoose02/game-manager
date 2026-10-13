@@ -1,4 +1,4 @@
-import type { AgeRating, ControllerSupport } from "@game-manager/shared";
+import type { AgeRating, ControllerSupport } from "@lootden/shared";
 
 export interface Candidate {
   provider: string;

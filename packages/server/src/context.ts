@@ -10,6 +10,9 @@ import type { NewsService } from "./news/service.js";
 import type { UserRepo } from "./users/repo.js";
 import type { Integrations } from "./settings/integrations.js";
 import type { ClientDownloads } from "./clients/store.js";
+import type { SaveStore } from "./saves/store.js";
+import type { ReleaseCalendar } from "./metadata/calendar.js";
+import type { VideoService } from "./news/videos.js";
 
 /** Everything route modules need, built once in buildApp. */
 export interface AppContext {
@@ -24,6 +27,9 @@ export interface AppContext {
   downloads: DownloadManager;
   integrations: Integrations;
   clients: ClientDownloads;
+  saves: SaveStore;
+  calendar: ReleaseCalendar;
+  videos: VideoService;
 }
 
 declare module "fastify" {

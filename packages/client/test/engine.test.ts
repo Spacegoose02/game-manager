@@ -63,7 +63,7 @@ describe("installed games", () => {
     const titles = (await listInstalled([root, path.join(root, "missing")])).map((g) => g.title);
     assert.ok(titles.includes("Stardew Valley"));
     assert.ok(!titles.includes("Not Ours"));
-    await assert.rejects(uninstallGame(path.join(root, "Not Ours")), /not a Game Manager install/);
+    await assert.rejects(uninstallGame(path.join(root, "Not Ours")), /not a LootDen install/);
     assert.ok((await stat(path.join(root, "Not Ours"))).isDirectory());
     const removed = await uninstallGame(dir);
     assert.equal(removed.title, "Stardew Valley");

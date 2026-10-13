@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import type { GameDetail as Game } from "@game-manager/shared";
+import type { GameDetail as Game } from "@lootden/shared";
 import { api, formatBytes, type Candidate } from "../api";
 import { useAuth } from "../auth";
 import { Badges } from "../components/Badges";
 import { Cover } from "../components/Cover";
 import { ArtworkEditor } from "../components/ArtworkEditor";
 import { DesktopInstall } from "../components/DesktopInstall";
+import { SavesPanel } from "../components/SavesPanel";
+import { PreparePanel } from "../components/PreparePanel";
 import { desktop } from "../desktop";
 
 export function GameDetail() {
@@ -47,11 +49,11 @@ export function GameDetail() {
             <DesktopInstall game={game} autoFocus={params.get("install") === "1"} />
           ) : (
           <div className="install panel">
-            <a className="button primary" href={`gamemanager://install/${game.id}`}>
+            <a className="button primary" href={`lootden://install/${game.id}`}>
               Install on this PC
             </a>
             <p className="muted small">
-              Opens the Game Manager app. Or run{" "}
+              Opens the LootDen app. Or run{" "}
               <code
                 role="button"
                 tabIndex={0}
@@ -100,6 +102,10 @@ export function GameDetail() {
           </tbody>
         </table>
       </section>
+
+      <PreparePanel game={game} />
+
+      <SavesPanel game={game} onChange={setGame} />
 
       {me?.role === "admin" && <AdminTools game={game} onChange={setGame} />}
     </article>

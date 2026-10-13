@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { archiveKindOf, groupArchiveSets, safeFolderName } from "@game-manager/shared";
+import { archiveKindOf, groupArchiveSets, safeFolderName } from "@lootden/shared";
 
 describe("archive detection", () => {
   it("recognises archives and split volumes", () => {

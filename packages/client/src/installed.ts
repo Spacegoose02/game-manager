@@ -49,7 +49,7 @@ export async function listInstalled(installDirs: string[]): Promise<InstalledGam
  */
 export async function uninstallGame(dir: string): Promise<InstalledGame> {
   const m = await readManifest(dir);
-  if (!m) throw new Error(`${dir} is not a Game Manager install (no ${MANIFEST_NAME}); not deleting it`);
+  if (!m) throw new Error(`${dir} is not a LootDen install (no ${MANIFEST_NAME}); not deleting it`);
   const s = await stat(dir);
   if (!s.isDirectory()) throw new Error(`${dir} is not a folder`);
   await rm(dir, { recursive: true, force: true });

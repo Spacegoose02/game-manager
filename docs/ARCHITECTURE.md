@@ -3,13 +3,13 @@
 ```
                Unraid / Docker host                                Gaming PCs
  ┌─────────────────────────────────────────────┐        ┌──────────────────────────────────┐
- │ game-manager container                      │        │ Desktop app (Electron)           │
+ │ lootden container                           │        │ Desktop app (Electron)           │
  │                                             │  HTTP  │  shows the server's web UI       │
  │  watcher + scanner ─► library (SQLite)      │ ◄────► │  install engine: download,       │
  │  metadata: IGDB ─ Steam ─ PCGamingWiki      │ cookie │  unpack (7-Zip), delete archives │
  │  auth: local, OIDC (TinyAuth), fwd headers  │  or    │  play-time tracking              │
  │  REST API, ranged file downloads, web UI    │ token  │                                  │
- │  connectors: Prowlarr, qBittorrent, SABnzbd │        │ Playnite plugin ─► gamemanager:// │
+ │  connectors: Prowlarr, qBittorrent, SABnzbd │        │ Playnite plugin ─► lootden://     │
  │                                             │        │ gm CLI (same engine)             │
  │  /games  /downloads  /data (db, covers)     │        │                                  │
  └─────────────────────────────────────────────┘        └──────────────────────────────────┘
@@ -70,7 +70,7 @@ PATH, then the bundled `7za` (zip and 7z only; RAR needs a full 7-Zip).
 The window loads the server's web UI. `preload.ts` exposes `window.gameManager`
 (install, play, uninstall, drives, choose folder) and the main process only answers
 calls coming from the configured server's origin. On first use it turns the browser
-session into a device token. It registers `gamemanager://install/<id>` so web links
+session into a device token. It registers `lootden://install/<id>` so web links
 and the Playnite plugin can start installs.
 
 ## Choices and why

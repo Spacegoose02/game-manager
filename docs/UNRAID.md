@@ -1,25 +1,30 @@
 # Running on Unraid
 
+> **Upgrading from Game Manager?** Keep your existing container and its paths. Point the
+> Repository at the new `lootden` image (or rebuild with the new source) and leave the
+> `appdata` path on `/mnt/user/appdata/game-manager`: LootDen finds the old
+> `game-manager.db` there and carries on. Nothing else needs changing.
+
 ## Option A: Docker tab (Add Container)
 
 Build the image once on the server (until you publish releases, see below):
 
 ```sh
-cd /mnt/user/appdata/game-manager-src     # this repository, copied to the server
-docker build -t game-manager:latest .
+cd /mnt/user/appdata/lootden-src     # this repository, copied to the server
+docker build -t lootden:latest .
 ```
 
 Then **Docker, Add Container**. Example with real paths:
 
 | Field | Value |
 | --- | --- |
-| Name | `game-manager` |
-| Repository | `game-manager:latest` (or `ghcr.io/<your-github-user>/game-manager:latest` once released) |
+| Name | `lootden` |
+| Repository | `lootden:latest` (or `ghcr.io/<your-github-user>/lootden:latest` once released) |
 | Network | `Bridge` |
 | Extra Parameters | leave empty (don't add `--user`; see below) |
 | WebUI | `http://[IP]:[PORT:8080]/` |
 | Port `web` | container `8080`, host `2435` (any free port) |
-| Path `appdata` | container `/data`, host `/mnt/user/appdata/game-manager` |
+| Path `appdata` | container `/data`, host `/mnt/user/appdata/lootden` |
 | Path `games` | container `/games`, host `/mnt/user/space/games/roms/` (see "Library folder" below) |
 | Path `downloads` (optional) | container `/downloads`, host the share your download clients finish into, e.g. `/mnt/user/downloads/` |
 | Variable (optional) | `PUID` / `PGID`: the user the server runs as, default `99` / `100` (nobody:users) |
@@ -31,8 +36,8 @@ Leave the `games` path Read/Write if you use the Downloads page (imports are wri
 there). Every variable is described in [.env.example](../.env.example).
 
 Once a `v*` tag has been pushed, the Release workflow publishes
-`ghcr.io/<your-github-user>/game-manager`; make the package public (GitHub profile,
-Packages, game-manager, Package settings) and use that as the Repository instead.
+`ghcr.io/<your-github-user>/lootden`; make the package public (GitHub profile,
+Packages, lootden, Package settings) and use that as the Repository instead.
 
 ### Permissions
 
@@ -41,7 +46,7 @@ The container starts as root only long enough to make the appdata folder belong 
 the games share are owned by nobody:users like the rest of Unraid.
 
 If the log says it "can't write to its data folder", you started it with `--user`:
-remove that from Extra Parameters, or run `chown -R 99:100 /mnt/user/appdata/game-manager`.
+remove that from Extra Parameters, or run `chown -R 99:100 /mnt/user/appdata/lootden`.
 
 ### Library folder
 
@@ -54,7 +59,7 @@ for example `roms/pc/`, `roms/snes/`, point `/games` at the PC folder itself
 ## Option B: Docker Compose (Compose Manager plugin)
 
 1. Install **Compose Manager** from Community Applications.
-2. Copy this repository to the server, for example `/mnt/user/appdata/game-manager-src`.
+2. Copy this repository to the server, for example `/mnt/user/appdata/lootden-src`.
 3. In that folder: `cp .env.example .env` and edit the paths and settings.
 4. Add a stack in Compose Manager pointing at that folder and run **Compose Up**
    (or `docker compose up -d --build` in the terminal to build locally).
@@ -68,7 +73,7 @@ Set these up in the web UI under **Downloads, Connections**.
 - Downloads use the `games` category in qBittorrent and SABnzbd. Create it there if it
   doesn't exist.
 - **Path mappings**: qBittorrent and SABnzbd report where a download finished as *their*
-  container sees it, so tell Game Manager how that maps to `/downloads`. Example: if
+  container sees it, so tell LootDen how that maps to `/downloads`. Example: if
   qBittorrent mounts `/mnt/user/downloads/` at `/data`, add `/data => /downloads`. If a
   client uses `/downloads` for the same share, it needs no mapping.
   Check each client's own Docker settings for its container path.
@@ -83,6 +88,6 @@ Set these up in the web UI under **Downloads, Connections**.
 - Keep the port on your LAN, or put it behind a reverse proxy with HTTPS (SWAG, Nginx
   Proxy Manager, Traefik). TinyAuth works through OIDC or forward auth (see the README).
 - Health check: `http://<unraid-ip>:8080/api/health` returns `{"status":"ok",...}`.
-- The **Get the app** page serves files from `/mnt/user/appdata/game-manager/clients`.
-- Back up `/mnt/user/appdata/game-manager`: it holds the database (profiles, play time,
+- The **Get the app** page serves files from `/mnt/user/appdata/lootden/clients`.
+- Back up `/mnt/user/appdata/lootden`: it holds the database (profiles, play time,
   metadata matches) and the cover cache.

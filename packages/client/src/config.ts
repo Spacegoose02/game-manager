@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -17,10 +18,10 @@ export interface ClientConfig {
 export const CONFIG_KEYS = ["serverUrl", "apiToken", "installDir", "sevenZipPath", "keepArchives"] as const;
 
 export function configDir(): string {
-  if (process.platform === "win32") {
-    return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "game-manager");
-  }
-  return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "game-manager");
+  const base = process.platform === "win32" ? process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming") : process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
+  // Before the rename to LootDen the folder was "game-manager"; keep using it if it's there.
+  const legacy = path.join(base, "game-manager");
+  return existsSync(legacy) ? legacy : path.join(base, "lootden");
 }
 
 export function configPath(): string {

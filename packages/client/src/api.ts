@@ -1,4 +1,4 @@
-import type { ActivityEvent, GameDetail, GameSummary, HealthResponse, LibraryStats, User } from "@game-manager/shared";
+import type { ActivityEvent, GameDetail, GameSummary, HealthResponse, LibraryStats, SaveBackup, User } from "@lootden/shared";
 import type { ClientConfig } from "./config.js";
 
 export class ApiError extends Error {
@@ -63,6 +63,36 @@ export class GameServerClient {
       headers: this.headers({ "Content-Type": "application/json" }),
       body: JSON.stringify(a),
     }).catch(() => undefined);
+  }
+  listSaves(gameId: string) {
+    return this.json<SaveBackup[]>(`/api/games/${encodeURIComponent(gameId)}/saves`);
+  }
+  async uploadSave(gameId: string, zip: Uint8Array, device: string): Promise<SaveBackup> {
+    const pathname = `/api/games/${encodeURIComponent(gameId)}/saves?device=${encodeURIComponent(device)}`;
+    const res = await fetch(this.base + pathname, { method: "POST", headers: this.headers({ "Content-Type": "application/octet-stream" }), body: new Blob([zip as Uint8Array<ArrayBuffer>]) });
+    if (!res.ok) throw new ApiError(`Uploading saves failed with ${res.status}: ${await res.text().catch(() => "")}`, res.status);
+    return (await res.json()) as SaveBackup;
+  }
+  async downloadSave(gameId: string, saveId: number): Promise<Uint8Array> {
+    const res = await fetch(`${this.base}/api/games/${encodeURIComponent(gameId)}/saves/${saveId}`, { headers: this.headers() });
+    if (!res.ok) throw new ApiError(`Downloading saves failed with ${res.status}`, res.status);
+    return new Uint8Array(await res.arrayBuffer());
+  }
+  /** Admin: replaces a disc or installer game with a zip of the installed game, streamed from disk. */
+  async uploadPrepared(gameId: string, zipPath: string, version?: string): Promise<GameDetail> {
+    const { createReadStream } = await import("node:fs");
+    const { stat } = await import("node:fs/promises");
+    const { Readable } = await import("node:stream");
+    const size = (await stat(zipPath)).size;
+    const qs = version ? `?version=${encodeURIComponent(version)}` : "";
+    const res = await fetch(`${this.base}/api/games/${encodeURIComponent(gameId)}/prepared${qs}`, {
+      method: "PUT",
+      headers: this.headers({ "Content-Type": "application/octet-stream", "Content-Length": String(size) }),
+      body: Readable.toWeb(createReadStream(zipPath)) as ReadableStream,
+      duplex: "half",
+    } as RequestInit);
+    if (!res.ok) throw new ApiError(`Uploading the installed game failed with ${res.status}: ${await res.text().catch(() => "")}`, res.status);
+    return (await res.json()) as GameDetail;
   }
   fileUrl(gameId: string, index: number): string {
     return `${this.base}/api/games/${encodeURIComponent(gameId)}/files/${index}`;

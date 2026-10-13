@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import type { AuthProviders } from "@game-manager/shared";
+import type { AuthProviders } from "@lootden/shared";
 import { verifyPassword } from "../auth/crypto.js";
 import { SESSION_COOKIE } from "../auth/service.js";
 import { HttpProblem, type AppContext } from "../context.js";
@@ -54,7 +54,7 @@ export function authRoutes(app: FastifyInstance, ctx: AppContext) {
     }
     failures.delete(key);
     if (client) {
-      const { token } = ctx.auth.createApiToken(user.id, device || "Game Manager client");
+      const { token } = ctx.auth.createApiToken(user.id, device || "LootDen client");
       return { token, user: publicUser(user) };
     }
     startSession(req, reply, user);

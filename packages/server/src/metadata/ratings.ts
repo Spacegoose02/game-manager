@@ -1,4 +1,4 @@
-import type { AgeRating } from "@game-manager/shared";
+import type { AgeRating } from "@lootden/shared";
 
 // Ratings at or below these are treated as suitable for kids (roughly "ages 10 and under").
 const KID_SAFE: Record<string, RegExp> = {

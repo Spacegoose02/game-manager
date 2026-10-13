@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import type { AuthProviders } from "@game-manager/shared";
+import type { AuthProviders } from "@lootden/shared";
 import { api } from "../api";
 import { useAuth } from "../auth";
 
@@ -39,7 +39,7 @@ export function Login() {
     <div className="login">
       <form className="panel login-panel" onSubmit={submit}>
         <img src="/logo.svg" alt="" width={88} height={88} />
-        <h1>{setup ? "Create the admin account" : "Game Manager"}</h1>
+        <h1>{setup ? "Create the admin account" : "LootDen"}</h1>
         {setup && <p className="muted">This is the first start. The account you create here manages the library and other profiles.</p>}
         {error && <p className="error">{error}</p>}
         <label>

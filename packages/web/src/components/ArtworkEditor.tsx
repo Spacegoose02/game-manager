@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import type { GameDetail } from "@game-manager/shared";
+import type { GameDetail } from "@lootden/shared";
 import { api, type ArtworkOption } from "../api";
 
 const LABEL = { cover: "Cover", background: "Background" } as const;

@@ -1,8 +1,8 @@
 {
-  "name": "@game-manager/desktop",
-  "version": "0.3.1",
+  "name": "@lootden/desktop",
+  "version": "0.4.0",
   "private": true,
-  "description": "Game Manager desktop app for Windows and Linux",
+  "description": "LootDen desktop app for Windows and Linux",
   "homepage": "https://github.com/Spacegoose02/game-manager",
   "author": {
     "name": "Spacegoose02",
@@ -17,7 +17,7 @@
     "dist:linux": "npm run build && electron-builder --linux --publish never"
   },
   "dependencies": {
-    "@game-manager/client": "0.3.1"
+    "@lootden/client": "0.4.0"
   },
   "devDependencies": {
     "electron": "44.7.0",
@@ -26,7 +26,7 @@
   },
   "build": {
     "appId": "io.github.gamemanager.desktop",
-    "productName": "Game Manager",
+    "productName": "LootDen",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -47,8 +47,9 @@
     ],
     "protocols": [
       {
-        "name": "Game Manager",
+        "name": "LootDen",
         "schemes": [
+          "lootden",
           "gamemanager"
         ]
       }
@@ -59,13 +60,13 @@
         "portable"
       ],
       "icon": "build/icon.png",
-      "executableName": "GameManager"
+      "executableName": "LootDen"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "perMachine": false,
-      "artifactName": "GameManager-Setup-${version}.${ext}"
+      "artifactName": "LootDen-Setup-${version}.${ext}"
     },
     "linux": {
       "target": [
@@ -75,15 +76,16 @@
       "category": "Game",
       "icon": "build/icon.png",
       "mimeTypes": [
+        "x-scheme-handler/lootden",
         "x-scheme-handler/gamemanager"
       ],
-      "executableName": "game-manager",
+      "executableName": "lootden",
       "maintainer": "Spacegoose02 <208424520+Spacegoose02@users.noreply.github.com>"
     },
-    "artifactName": "GameManager-${version}-${os}-${arch}.${ext}",
+    "artifactName": "LootDen-${version}-${os}-${arch}.${ext}",
     "publish": null,
     "portable": {
-      "artifactName": "GameManager-${version}-portable.${ext}"
+      "artifactName": "LootDen-${version}-portable.${ext}"
     }
   }
 }

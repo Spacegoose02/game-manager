@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import type { FastifyInstance } from "fastify";
-import { buildApp, loadConfig, openDatabase } from "@game-manager/server/lib";
+import { buildApp, loadConfig, openDatabase } from "@lootden/server/lib";
 import { GameServerClient } from "../src/api.js";
 import { findSevenZip } from "../src/extractor.js";
 import { installGame, MANIFEST_NAME, pickGame } from "../src/installer.js";

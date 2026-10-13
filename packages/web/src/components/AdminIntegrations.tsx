@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type Integrations } from "../api";
 
 type S = Integrations["settings"];
@@ -9,12 +9,15 @@ export function AdminIntegrations({ onMessage }: { onMessage: (m: string) => voi
   const [s, setS] = useState<S | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Load once, so a parent re-render never replaces what is being typed.
+  const report = useRef(onMessage);
+  report.current = onMessage;
   useEffect(() => {
     api.integrations().then((v) => {
       setView(v);
       setS(v.settings);
-    }, (e: Error) => onMessage(e.message));
-  }, [onMessage]);
+    }, (e: Error) => report.current(e.message));
+  }, []);
   if (!s || !view) return null;
 
   const set = <K extends keyof S>(k: K, patch: S[K] extends object ? Partial<S[K]> : S[K]) =>
@@ -56,7 +59,7 @@ export function AdminIntegrations({ onMessage }: { onMessage: (m: string) => voi
       <h3>Single sign-on (TinyAuth or any OIDC provider)</h3>
       <ol className="steps small muted">
         <li>
-          In TinyAuth, add an OIDC client for Game Manager with this redirect URL:{" "}
+          In TinyAuth, add an OIDC client for LootDen with this redirect URL:{" "}
           <code>{view.callbackUrl ?? `${s.publicUrl || origin}/api/auth/oidc/callback`}</code>
         </li>
         <li>Paste TinyAuth's address and the client ID and secret it gives you below.</li>

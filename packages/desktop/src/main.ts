@@ -1,8 +1,12 @@
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, session, shell, type IpcMainInvokeEvent } from "electron";
 import {
+  backupSaves,
+  expandSavePath,
   findExecutable,
   findSevenZip,
   GameServerClient,
@@ -10,20 +14,30 @@ import {
   launchAndTrack,
   listDrives,
   listInstalled,
+  prepareGame,
+  restoreSaves,
+  uploadInstalledFolder,
+  type PrepareStep,
   saveExecutable,
   uninstallGame,
   type InstallEvent,
-} from "@game-manager/client";
+} from "@lootden/client";
 import { SettingsStore } from "./settings.js";
 
-const PROTOCOL = "gamemanager";
+// lootden:// is the current scheme; gamemanager:// still works for links and plugins from before the rename.
+const PROTOCOLS = ["lootden", "gamemanager"];
+const isDeepLink = (a: string) => PROTOCOLS.some((p) => a.startsWith(`${p}://`));
 let win: BrowserWindow | null = null;
 let settings: SettingsStore;
 const running = new Map<string, AbortController>();
-let pendingDeepLink: string | null = process.argv.find((a) => a.startsWith(`${PROTOCOL}://`)) ?? null;
+let pendingDeepLink: string | null = process.argv.find(isDeepLink) ?? null;
+
+// Keep settings from before the rename: the app's data folder used to be "Game Manager".
+const legacyUserData = path.join(app.getPath("appData"), "Game Manager");
+if (existsSync(legacyUserData)) app.setPath("userData", legacyUserData);
 
 if (!app.requestSingleInstanceLock()) app.quit();
-app.setAsDefaultProtocolClient(PROTOCOL);
+for (const p of PROTOCOLS) app.setAsDefaultProtocolClient(p);
 
 const origin = () => {
   try {
@@ -52,6 +66,38 @@ async function sevenZipPath(): Promise<string> {
   const system = await findSevenZip("").catch(() => null);
   if (system?.supportsRar) return system.path;
   return existsSync(bundled7za()) ? bundled7za() : (system?.path ?? "");
+}
+
+/** Runs an installer with a UAC prompt and waits for it (and anything it starts) to close. */
+function runElevated(file: string, args: string[]): Promise<void> {
+  const q = (x: string) => `'${x.replace(/'/g, "''")}'`;
+  // Inno wants /DIR="C:\a b"; NSIS wants /D=C:\a b unquoted (and last).
+  const quoteArg = (a: string) => (a.includes(" ") && !a.startsWith("/D=") ? a.replace(/^([^=]+=)(.*)$/, '$1"$2"') : a);
+  const argList = args.length ? ` -ArgumentList ${q(args.map(quoteArg).join(" "))}` : "";
+  const script = `Start-Process -FilePath ${q(file)} -WorkingDirectory ${q(path.dirname(file))}${argList} -Verb RunAs -Wait`;
+  return new Promise((resolve, reject) => {
+    const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { windowsHide: true });
+    let err = "";
+    child.stderr.on("data", (d) => (err += d.toString()));
+    child.on("error", reject);
+    child.on("close", (code) => (code === 0 ? resolve() : reject(new Error(/canceled by the user/i.test(err) ? "The installer was cancelled" : err.trim() || `Installer exited with ${code}`))));
+  });
+}
+
+async function sevenZip() {
+  const p = await sevenZipPath();
+  if (!p) throw new Error("7-Zip is needed for save backups");
+  return { path: p, supportsRar: false };
+}
+
+/** Uploads the game's saves if it has a save location and the folder exists; null otherwise. */
+async function syncSaves(api: GameServerClient, gameId: string, installDir: string) {
+  const detail = await api.getGame(gameId);
+  if (!detail.savePath) return null;
+  const dir = await expandSavePath(detail.savePath, installDir);
+  if (!existsSync(dir)) return { error: `No saves found at ${dir}` };
+  const backup = await backupSaves(api, await sevenZip(), gameId, dir, os.hostname());
+  return { backupId: backup.id, size: backup.size };
 }
 
 /** Gets a device token from the signed-in browser session the first time it's needed. */
@@ -86,7 +132,7 @@ function registerIpc(): void {
     if (!e.senderFrame?.url.startsWith("file://")) throw new Error("Not allowed from this page");
     const parsed = new URL(/^https?:\/\//.test(url) ? url : `http://${url}`);
     const health = await net.fetch(`${parsed.origin}/api/health`).then((r) => r.json() as Promise<{ status?: string }>).catch(() => null);
-    if (health?.status !== "ok") throw new Error(`No Game Manager server answered at ${parsed.origin}`);
+    if (health?.status !== "ok") throw new Error(`No LootDen server answered at ${parsed.origin}`);
     settings.update({ serverUrl: parsed.origin, apiToken: "" });
     await win?.loadURL(parsed.origin);
     return true;
@@ -168,11 +214,129 @@ function registerIpc(): void {
     void launchAndTrack(game.dir, exe).then(
       async (seconds) => {
         send({ gameId, type: "stopped", seconds });
-        await (await client()).reportActivity({ gameId, device: os.hostname(), event: "played", seconds });
+        const api = await client();
+        await api.reportActivity({ gameId, device: os.hostname(), event: "played", seconds });
+        // Save sync: back up after every session when the game has a save location.
+        const saved = await syncSaves(api, gameId, game.dir).catch((err: Error) => ({ error: err.message }));
+        if (saved) send({ gameId, type: "saves", ...saved });
       },
       (err: Error) => send({ gameId, type: "error", message: err.message }),
     );
     return { executable: exe };
+  });
+
+  ipcMain.handle("gm:backupSaves", async (e, gameId: string) => {
+    fromServer(e);
+    const game = await findInstalled(gameId);
+    const r = await syncSaves(await client(), gameId, game.dir);
+    if (!r) throw new Error("No save location is set for this game yet");
+    return r;
+  });
+
+  ipcMain.handle("gm:restoreSaves", async (e, gameId: string, saveId: number) => {
+    fromServer(e);
+    const game = await findInstalled(gameId);
+    const api = await client();
+    const detail = await api.getGame(gameId);
+    if (!detail.savePath) throw new Error("No save location is set for this game yet");
+    const dir = await expandSavePath(detail.savePath, game.dir);
+    const { response } = await dialog.showMessageBox(win!, {
+      type: "question",
+      buttons: ["Restore", "Cancel"],
+      defaultId: 0,
+      cancelId: 1,
+      message: `Replace the saves in ${dir}?`,
+      detail: "Your current saves are kept beside it in a .gm-backup folder.",
+    });
+    if (response !== 0) return null;
+    return restoreSaves(api, await sevenZip(), gameId, saveId, dir);
+  });
+
+  // ---- Disc and installer games: install once here, upload the installed folder -------
+
+  const prepareStep = (gameId: string) => {
+    let last = 0;
+    return (st: PrepareStep) => {
+      const message =
+        st.step === "download"
+          ? st.event.type === "download"
+            ? `Downloading ${st.event.file} (${Math.floor((st.event.received / Math.max(st.event.total, 1)) * 100)}%)`
+            : st.event.type === "extract"
+              ? `Unpacking ${st.event.archive}`
+              : null
+          : st.step === "unpack-disc"
+            ? `Unpacking ${st.file}`
+            : st.step === "install"
+              ? "Running the installer. Finish it, then come back here."
+              : st.step === "zip"
+                ? "Zipping the installed game"
+                : st.step === "upload"
+                  ? `Uploading ${(st.bytes / 1024 ** 3).toFixed(1)} GB to the server`
+                  : "Done";
+      if (!message) return;
+      const now = Date.now();
+      if (st.step === "download" && now - last < 500) return;
+      last = now;
+      send({ gameId, type: "prepare", message });
+    };
+  };
+
+  /** Full 7-Zip (reads ISOs) when installed, else the bundled 7za. */
+  const prepSevenZip = async () => (await findSevenZip("").catch(() => null)) ?? (await sevenZip());
+
+  ipcMain.handle("gm:prepare", async (e, gameId: string) => {
+    fromServer(e);
+    if (process.platform !== "win32") throw new Error("Running installers needs the Windows app. On Linux, install it with Wine yourself, then use Upload an installed folder.");
+    if (running.has(gameId)) throw new Error("Already working on this game");
+    const controller = new AbortController();
+    running.set(gameId, controller);
+    const workDir = path.join(settings.get().installDir, `.prepare-${gameId}`);
+    try {
+      const game = await prepareGame(await client(), gameId, {
+        workDir,
+        sevenZip: await prepSevenZip(),
+        onStep: prepareStep(gameId),
+        runInstaller: (setup, target, args) => runElevated(setup, args),
+        confirmInstalled: async (suggested) => {
+          const { response } = await dialog.showMessageBox(win!, {
+            type: "question",
+            buttons: ["Upload this folder", "Choose another folder", "Cancel"],
+            defaultId: 0,
+            cancelId: 2,
+            message: "Is the game installed?",
+            detail: `We asked the installer to use:\n${suggested}\n\nIf you picked a different folder in the installer, choose it instead. Start the game once first if it needs to finish setting up.`,
+          });
+          if (response === 2) return null;
+          if (response === 0) return suggested;
+          const r = await dialog.showOpenDialog(win!, { title: "Folder the game was installed to", properties: ["openDirectory"] });
+          return r.canceled ? null : r.filePaths[0]!;
+        },
+      });
+      send({ gameId, type: "prepare", message: game ? "Uploaded. Everyone now gets the installed version." : "Cancelled", done: true, newId: game?.id });
+      return game;
+    } catch (err) {
+      send({ gameId, type: "prepare", message: (err as Error).message, done: true, error: true });
+      throw err;
+    } finally {
+      running.delete(gameId);
+    }
+  });
+
+  ipcMain.handle("gm:uploadFolder", async (e, gameId: string) => {
+    fromServer(e);
+    const r = await dialog.showOpenDialog(win!, { title: "Folder with the installed game", properties: ["openDirectory"] });
+    if (r.canceled) return null;
+    const workDir = path.join(settings.get().installDir, `.prepare-${gameId}`);
+    try {
+      const game = await uploadInstalledFolder(await client(), gameId, r.filePaths[0]!, { workDir, sevenZip: await prepSevenZip(), onStep: prepareStep(gameId) });
+      send({ gameId, type: "prepare", message: "Uploaded. Everyone now gets the installed version.", done: true, newId: game.id });
+      return game;
+    } catch (err) {
+      send({ gameId, type: "prepare", message: (err as Error).message, done: true, error: true });
+      throw err;
+    } finally {
+      await rm(workDir, { recursive: true, force: true }).catch(() => {});
+    }
   });
 
   ipcMain.handle("gm:uninstall", async (e, gameId: string) => {
@@ -212,9 +376,9 @@ function registerIpc(): void {
   });
 }
 
-/** gamemanager://install/<id> from a browser opens the game page with the install panel. */
+/** lootden://install/<id> from a browser opens the game page with the install panel. */
 async function openDeepLink(link: string): Promise<void> {
-  const m = link.match(/^gamemanager:\/\/install\/([\w-]+)/);
+  const m = link.match(/^(?:lootden|gamemanager):\/\/install\/([\w-]+)/);
   if (!m || !win || !origin()) return;
   if (win.isMinimized()) win.restore();
   win.focus();
@@ -231,7 +395,7 @@ async function createWindow(): Promise<void> {
     backgroundColor: "#0d0820",
     fullscreen: s.fullscreen,
     autoHideMenuBar: true,
-    title: "Game Manager",
+    title: "LootDen",
     icon: path.join(__dirname, "..", "build", "icon.png"),
     webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false },
   });
@@ -258,7 +422,7 @@ async function createWindow(): Promise<void> {
 }
 
 app.on("second-instance", (_e, argv) => {
-  const link = argv.find((a) => a.startsWith(`${PROTOCOL}://`));
+  const link = argv.find(isDeepLink);
   if (link) void openDeepLink(link);
   else win?.focus();
 });

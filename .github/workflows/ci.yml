@@ -16,7 +16,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - run: npm run build -w @game-manager/desktop
+      - run: npm run build -w @lootden/desktop
 
   playnite:
     runs-on: windows-latest

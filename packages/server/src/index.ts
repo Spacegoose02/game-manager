@@ -1,4 +1,5 @@
 import "./privileges.js";
+import { existsSync } from "node:fs";
 import { access, constants, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,7 +9,9 @@ import { loadConfig } from "./config.js";
 import { openDatabase } from "./db/database.js";
 
 const config = loadConfig();
-const dbFile = path.join(config.dataDir, "game-manager.db");
+// Data folders from before the rename to LootDen keep their game-manager.db.
+const legacyDb = path.join(config.dataDir, "game-manager.db");
+const dbFile = existsSync(legacyDb) ? legacyDb : path.join(config.dataDir, "lootden.db");
 await checkWritable(config.dataDir);
 const db = openDatabase(dbFile);
 
@@ -57,7 +60,7 @@ async function checkWritable(dir: string): Promise<void> {
     const gid = process.getgid?.() ?? "?";
     console.error(
       [
-        `Game Manager can't write to its data folder ${dir} (running as uid ${uid}, gid ${gid}).`,
+        `LootDen can't write to its data folder ${dir} (running as uid ${uid}, gid ${gid}).`,
         `  Reason: ${(err as Error).message}`,
         "  Fix one of these:",
         "  - Remove --user from the container's Extra Parameters. Started normally, the container makes",

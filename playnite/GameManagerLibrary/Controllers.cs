@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 namespace GameManagerLibrary
 {
     /// <summary>
-    /// Hands the install to the desktop app (gamemanager://install/id), then waits for the server
+    /// Hands the install to the desktop app (lootden://install/id), then waits for the server
     /// to say this PC has it. The desktop app does the download, unpack and archive cleanup.
     /// </summary>
     public class GameManagerInstallController : InstallController
@@ -19,7 +19,7 @@ namespace GameManagerLibrary
 
         public GameManagerInstallController(Game game, ServerApi api) : base(game)
         {
-            Name = "Install with Game Manager";
+            Name = "Install with LootDen";
             this.api = api;
         }
 
@@ -27,7 +27,7 @@ namespace GameManagerLibrary
         {
             try
             {
-                Process.Start("gamemanager://install/" + Game.GameId);
+                Process.Start("lootden://install/" + Game.GameId);
             }
             catch (Exception)
             {
@@ -51,7 +51,7 @@ namespace GameManagerLibrary
                     }
                     catch (Exception e)
                     {
-                        LogManager.GetLogger().Warn(e, "Game Manager: checking install state failed");
+                        LogManager.GetLogger().Warn(e, "LootDen: checking install state failed");
                     }
                     await Task.Delay(TimeSpan.FromSeconds(5), token).ContinueWith(_ => { });
                 }
@@ -84,7 +84,7 @@ namespace GameManagerLibrary
             }
             catch (Exception e)
             {
-                LogManager.GetLogger().Warn(e, "Game Manager: reporting uninstall failed");
+                LogManager.GetLogger().Warn(e, "LootDen: reporting uninstall failed");
             }
             InvokeOnUninstalled(new GameUninstalledEventArgs());
         }

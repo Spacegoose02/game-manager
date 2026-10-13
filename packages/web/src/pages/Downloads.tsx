@@ -1,10 +1,13 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, formatBytes, type Connectors, type DownloadRecord, type LiveDownload, type SearchResult } from "../api";
+import { DownloadResults } from "../components/DownloadResults";
 
 const eta = (s: number | null) => (s == null ? "" : s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(1)} h`);
 
 export function Downloads() {
-  const [query, setQuery] = useState("");
+  const [params] = useSearchParams();
+  const [query, setQuery] = useState(params.get("q") ?? "");
   const [results, setResults] = useState<SearchResult[] | null>(null);
   const [list, setList] = useState<{ downloads: DownloadRecord[]; other: LiveDownload[] }>({ downloads: [], other: [] });
   const [msg, setMsg] = useState("");
@@ -30,6 +33,13 @@ export function Downloads() {
       setBusy(false);
     }
   };
+
+  // Arriving from Discover with ?q= runs the search straight away.
+  useEffect(() => {
+    const q = params.get("q");
+    if (q) void act(async () => setResults(await api.searchDownloads(q)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const search = (e: FormEvent) => {
     e.preventDefault();
@@ -57,49 +67,7 @@ export function Downloads() {
       {results && (
         <section className="panel">
           <h2>Results</h2>
-          {results.length === 0 ? (
-            <p className="muted">Nothing found.</p>
-          ) : (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Title</th>
-                  <th>Indexer</th>
-                  <th className="num">Size</th>
-                  <th className="num">Seeds</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {results.slice(0, 100).map((r) => (
-                  <tr key={r.guid}>
-                    <td>
-                      {r.infoUrl ? (
-                        <a href={r.infoUrl} target="_blank" rel="noreferrer">
-                          {r.title}
-                        </a>
-                      ) : (
-                        r.title
-                      )}
-                      <br />
-                      <small className="muted">
-                        {r.protocol}
-                        {r.publishedAt ? ` · ${new Date(r.publishedAt).toLocaleDateString()}` : ""}
-                      </small>
-                    </td>
-                    <td>{r.indexer}</td>
-                    <td className="num">{formatBytes(r.sizeBytes)}</td>
-                    <td className="num">{r.protocol === "torrent" ? (r.seeders ?? "?") : "—"}</td>
-                    <td className="num">
-                      <button disabled={busy} onClick={() => act(() => api.grab({ url: r.downloadUrl, title: r.title, protocol: r.protocol }), `Sent "${r.title}" to ${r.protocol === "usenet" ? "SABnzbd" : "qBittorrent"}`)}>
-                        Get
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          <DownloadResults results={results} onGrab={(r) => act(() => api.grab({ url: r.downloadUrl, title: r.title, protocol: r.protocol }), `Sent "${r.title}" to ${r.protocol === "usenet" ? "SABnzbd" : "qBittorrent"}`)} busy={busy} />
         </section>
       )}
 
@@ -154,12 +122,16 @@ export function Downloads() {
 function ConnectorSettings({ onSaved }: { onSaved: (m: string) => void }) {
   const [c, setC] = useState<Connectors | null>(null);
   const [mapping, setMapping] = useState("");
+  // Load once. The page around this form refreshes the queue every few seconds; reloading
+  // here on each of those renders used to wipe whatever was being typed.
+  const report = useRef(onSaved);
+  report.current = onSaved;
   useEffect(() => {
     api.connectors().then((x) => {
       setC(x);
       setMapping(x.import.pathMappings.map((m) => `${m.from} => ${m.to}`).join("\n"));
-    }, (e: Error) => onSaved(e.message));
-  }, [onSaved]);
+    }, (e: Error) => report.current(e.message));
+  }, []);
   if (!c) return null;
   const set = <K extends keyof Connectors>(k: K, patch: Partial<Connectors[K]>) => setC({ ...c, [k]: { ...c[k], ...patch } });
   const save = async () => {
@@ -213,6 +185,24 @@ function ConnectorSettings({ onSaved }: { onSaved: (m: string) => void }) {
             <option value="off">Leave it where it is</option>
           </select>
         </label>
+      </div>
+      <div className="tidy-options">
+        <label className="check">
+          <input type="checkbox" checked={c.import.tidy.stripJunk} onChange={(e) => set("import", { tidy: { ...c.import.tidy, stripJunk: e.target.checked } })} />
+          Remove junk (site links, .nfo files, read-me and "install tutorial" files)
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={c.import.tidy.extract} onChange={(e) => set("import", { tidy: { ...c.import.tidy, extract: e.target.checked } })} />
+          Unpack archives inside the download, including archives inside archives
+        </label>
+        <label>
+          Store the game as
+          <select value={c.import.tidy.repack} onChange={(e) => set("import", { tidy: { ...c.import.tidy, repack: e.target.value as "zip" | "folder" } })}>
+            <option value="zip">One zip named "Title v1.2.zip" (smaller, fewer files)</option>
+            <option value="folder">A folder named "Title v1.2"</option>
+          </select>
+        </label>
+        <p className="muted small">Disc images and installers are kept as folders so you can set them up once from the app.</p>
       </div>
       <label>
         Path mappings, one per line: <code>client path =&gt; path in this container</code>

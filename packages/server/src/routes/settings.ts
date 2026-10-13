@@ -17,6 +17,7 @@ export function settingsRoutes(app: FastifyInstance, ctx: AppContext) {
       throw new HttpProblem(400, (err as Error).message);
     }
     ctx.metadata.configure();
+    ctx.calendar.reset();
     ctx.oidc.reset();
     return view;
   });

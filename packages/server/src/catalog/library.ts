@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
-import { statfs } from "node:fs/promises";
-import type { ControllerSupport, GameDetail, GameMetadata, GameSummary, LibraryStats } from "@game-manager/shared";
+import { mkdir, rename, statfs } from "node:fs/promises";
+import path from "node:path";
+import type { ControllerSupport, GameDetail, GameMetadata, GameSummary, LibraryStats } from "@lootden/shared";
 import { json, now, type Db } from "../db/database.js";
 import { kidSafeFromRatings } from "../metadata/ratings.js";
-import { scanLibrary, type ScannedGame } from "./scanner.js";
+import { gameIdFor, scanLibrary, type ScannedGame } from "./scanner.js";
 
 export interface GameQuery {
   search?: string;
@@ -25,6 +26,7 @@ interface GameRow {
   controller_override: string | null;
   cover_override: string | null;
   background_override: string | null;
+  save_path: string | null;
 }
 
 interface MetadataRow {
@@ -137,7 +139,7 @@ export class Library {
 
   private rows(): { games: Map<string, GameRow>; meta: Map<string, MetadataRow> } {
     const games = new Map(
-      (this.db.prepare("SELECT id, added_at, title_override, kid_safe_override, controller_override, cover_override, background_override FROM games").all() as unknown as GameRow[]).map(
+      (this.db.prepare("SELECT id, added_at, title_override, kid_safe_override, controller_override, cover_override, background_override, save_path FROM games").all() as unknown as GameRow[]).map(
         (r) => [r.id, r],
       ),
     );
@@ -170,13 +172,14 @@ export class Library {
         cover: row?.cover_override ?? null,
         background: row?.background_override ?? null,
       },
+      savePath: row?.save_path ?? null,
     };
   }
 
   get(id: string): GameDetail | undefined {
     const g = this.scanned.get(id);
     if (!g) return undefined;
-    const row = this.db.prepare("SELECT id, added_at, title_override, kid_safe_override, controller_override, cover_override, background_override FROM games WHERE id = ?").get(id) as
+    const row = this.db.prepare("SELECT id, added_at, title_override, kid_safe_override, controller_override, cover_override, background_override, save_path FROM games WHERE id = ?").get(id) as
       | GameRow
       | undefined;
     const meta = this.db.prepare("SELECT * FROM metadata WHERE game_id = ?").get(id) as MetadataRow | undefined;
@@ -189,7 +192,7 @@ export class Library {
     const genre = query.genre?.toLowerCase();
     let out: GameSummary[] = [];
     for (const g of this.scanned.values()) {
-      const { files: _f, metadata: _m, overrides: _o, backgroundUrl: _b, ...summary } = this.view(g, games.get(g.id), meta.get(g.id));
+      const { files: _f, metadata: _m, overrides: _o, backgroundUrl: _b, savePath: _s, ...summary } = this.view(g, games.get(g.id), meta.get(g.id));
       if (q && !summary.title.toLowerCase().includes(q) && !summary.source.toLowerCase().includes(q)) continue;
       if (genre && !summary.genres.some((x) => x.toLowerCase() === genre)) continue;
       if (query.kidSafe && summary.kidSafe !== true) continue;
@@ -218,6 +221,45 @@ export class Library {
     const counts = new Map<string, number>();
     for (const g of this.list({ kidSafe: kidSafeOnly })) for (const name of g.genres) counts.set(name, (counts.get(name) ?? 0) + 1);
     return [...counts].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  }
+
+  /**
+   * Swaps a game for a new copy (the zipped install made from a disc image or installer).
+   * The new file is already in the games folder; the old one moves to .replaced/ and its
+   * metadata, overrides, play history and saves carry over to the new id.
+   */
+  async replaceGame(oldId: string, newSource: string): Promise<GameDetail> {
+    const old = this.scanned.get(oldId);
+    if (!old) throw new Error("Unknown game");
+    const newId = gameIdFor(newSource);
+    const replaced = path.join(this.gamesDir, ".replaced");
+    await mkdir(replaced, { recursive: true });
+    await rename(path.join(this.gamesDir, old.source), path.join(replaced, `${Date.now()}-${old.source}`));
+    this.db.exec("BEGIN");
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO games (id, source, added_at, title_override, kid_safe_override, controller_override, cover_override, background_override, save_path)
+           SELECT ?, ?, added_at, title_override, kid_safe_override, controller_override, cover_override, background_override, save_path FROM games WHERE id = ?
+           ON CONFLICT(id) DO NOTHING`,
+        )
+        .run(newId, newSource, oldId);
+      for (const table of ["metadata", "metadata_attempts", "user_games", "saves"]) {
+        this.db.prepare(`UPDATE OR IGNORE ${table} SET game_id = ? WHERE game_id = ?`).run(newId, oldId);
+      }
+      this.db.exec("COMMIT");
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
+    await this.rescan();
+    const game = this.get(newId);
+    if (!game) throw new Error(`${newSource} didn't show up in the library after the upload`);
+    return game;
+  }
+
+  setSavePath(id: string, savePath: string | null): void {
+    this.db.prepare("UPDATE games SET save_path = ? WHERE id = ?").run(savePath || null, id);
   }
 
   setOverrides(id: string, o: { title?: string | null; kidSafe?: boolean | null; controller?: ControllerSupport | null }): void {

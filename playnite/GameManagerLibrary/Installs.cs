@@ -71,7 +71,7 @@ namespace GameManagerLibrary
         /// <summary>Deletes an install folder, but only one the desktop app created.</summary>
         public static void Delete(string dir)
         {
-            if (Read(dir) == null) throw new InvalidOperationException($"{dir} has no {ManifestName}, so it was not installed by Game Manager; not deleting it.");
+            if (Read(dir) == null) throw new InvalidOperationException($"{dir} has no {ManifestName}, so it was not installed by LootDen; not deleting it.");
             Directory.Delete(dir, true);
         }
     }

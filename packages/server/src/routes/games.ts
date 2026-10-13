@@ -1,7 +1,10 @@
-import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { createReadStream, createWriteStream } from "node:fs";
+import { rename, rm, stat } from "node:fs/promises";
+import path from "node:path";
+import type { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import type { ControllerSupport, GameSummary } from "@game-manager/shared";
+import { safeFolderName, type ControllerSupport, type GameSummary } from "@lootden/shared";
 import type { GameQuery } from "../catalog/library.js";
 import { resolveGameFile } from "../catalog/scanner.js";
 import { HttpProblem, requireAdmin, requireUser, type AppContext } from "../context.js";
@@ -83,7 +86,15 @@ export function gameRoutes(app: FastifyInstance, ctx: AppContext) {
     add("controller", "Great with a controller", all.filter((g) => g.controllerSupport === "full"));
     if (!kidSafe) add("kids", "Family friendly", all.filter((g) => g.kidSafe === true));
     for (const { name } of ctx.library.genres(kidSafe).slice(0, 6)) add(`genre:${name}`, name, all.filter((g) => g.genres.includes(name)));
-    return { featured: all.filter((g) => g.coverUrl).sort(() => Math.random() - 0.5).slice(0, 5), sections };
+    const featured = all
+      .filter((g) => g.coverUrl)
+      .sort(() => Math.random() - 0.5)
+      .slice(0, 6)
+      .map((g) => {
+        const d = ctx.library.get(g.id);
+        return { ...g, backgroundUrl: d?.backgroundUrl ?? null, blurb: d?.metadata?.summary?.slice(0, 280) ?? null };
+      });
+    return { featured, sections };
   });
 
   app.get<{ Params: { id: string } }>("/api/games/:id", async (req) => visibleGame(req, req.params.id));
@@ -130,6 +141,30 @@ export function gameRoutes(app: FastifyInstance, ctx: AppContext) {
     requireAdmin(req);
     ctx.metadata.setOverride(req.params.id, artworkKind(req.params.kind), null);
     return ctx.library.get(req.params.id);
+  });
+
+  /**
+   * Admin: replace a disc-image or installer game with the zipped, installed game
+   * (application/octet-stream). The original moves to .replaced/ in the games folder.
+   */
+  app.put<{ Params: { id: string }; Querystring: { version?: string } }>("/api/games/:id/prepared", async (req) => {
+    requireAdmin(req);
+    const game = visibleGame(req, req.params.id);
+    if (!req.body || typeof (req.body as Readable).pipe !== "function") throw new HttpProblem(400, "Send the zip as application/octet-stream");
+    const version = req.query.version?.trim().replace(/^v/i, "");
+    const name = `${safeFolderName(version ? `${game.title} v${version}` : game.title)}.zip`;
+    const target = path.join(ctx.config.gamesDir, name);
+    if (await stat(target).catch(() => null)) throw new HttpProblem(409, `${name} is already in the games folder`);
+    const temp = path.join(ctx.config.gamesDir, `.${name}.uploading`);
+    try {
+      await pipeline(req.body as Readable, createWriteStream(temp));
+      if ((await stat(temp)).size === 0) throw new Error("The upload was empty");
+      await rename(temp, target);
+    } catch (err) {
+      await rm(temp, { force: true });
+      throw new HttpProblem(400, (err as Error).message);
+    }
+    return ctx.library.replaceGame(game.id, name);
   });
 
   app.get<{ Params: { id: string; index: string } }>("/api/games/:id/files/:index", async (req, reply) => {

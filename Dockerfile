@@ -1,5 +1,5 @@
-# Game Manager server image (API + web UI).
-# Build: docker build -t game-manager-server .
+# LootDen server image (API + web UI).
+# Build: docker build -t lootden .
 
 FROM node:22-alpine AS build
 WORKDIR /app
@@ -13,7 +13,7 @@ RUN npm ci --ignore-scripts
 COPY packages/shared packages/shared
 COPY packages/server packages/server
 COPY packages/web packages/web
-RUN npx tsc -b packages/shared packages/server && npm run build -w @game-manager/web
+RUN npx tsc -b packages/shared packages/server && npm run build -w @lootden/web
 
 FROM node:22-alpine
 ENV NODE_ENV=production \
@@ -29,14 +29,15 @@ COPY packages/server/package.json packages/server/
 COPY packages/client/package.json packages/client/
 COPY packages/web/package.json packages/web/
 COPY packages/desktop/package.json packages/desktop/
-RUN npm ci --omit=dev --ignore-scripts --workspace @game-manager/server --workspace @game-manager/shared \
+RUN npm ci --omit=dev --ignore-scripts --workspace @lootden/server --workspace @lootden/shared \
     && npm cache clean --force \
     && rm -rf packages/client packages/web/package.json packages/desktop
 COPY --from=build /app/packages/shared/dist packages/shared/dist
 COPY --from=build /app/packages/server/dist/src packages/server/dist/src
 COPY --from=build /app/packages/web/dist packages/web/dist
 COPY docker-entrypoint.sh /usr/local/bin/
-RUN mkdir -p /games /data
+# 7-Zip unpacks and re-zips finished downloads during import.
+RUN apk add --no-cache 7zip && mkdir -p /games /data
 EXPOSE 8080
 VOLUME ["/data"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \

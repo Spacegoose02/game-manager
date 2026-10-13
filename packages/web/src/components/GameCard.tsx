@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import type { GameSummary } from "@game-manager/shared";
+import type { GameSummary } from "@lootden/shared";
 import { Badges } from "./Badges";
 import { Cover } from "./Cover";
 

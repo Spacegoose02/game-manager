@@ -16,7 +16,7 @@ namespace GameManagerLibrary
         private GameManagerSettingsViewModel settings;
 
         public override Guid Id { get; } = Guid.Parse("cb17f98c-8f44-4e3a-8804-b3d7df8ca427");
-        public override string Name => "Game Manager";
+        public override string Name => "LootDen";
         public override LibraryClient Client => null;
 
         private ServerApi Api => new ServerApi(settings.Settings);
@@ -32,7 +32,7 @@ namespace GameManagerLibrary
             var api = Api;
             if (!api.Configured)
             {
-                PlayniteApi.Notifications.Add(new NotificationMessage("gm-setup", "Game Manager: add your server address and token in the add-on settings.", NotificationType.Info));
+                PlayniteApi.Notifications.Add(new NotificationMessage("gm-setup", "LootDen: add your server address and token in the add-on settings.", NotificationType.Info));
                 return Enumerable.Empty<GameMetadata>();
             }
             var games = api.Games().GetAwaiter().GetResult();
@@ -44,7 +44,7 @@ namespace GameManagerLibrary
                 {
                     GameId = g.id,
                     Name = g.title,
-                    Source = new MetadataNameProperty("Game Manager"),
+                    Source = new MetadataNameProperty("LootDen"),
                     Platforms = new HashSet<MetadataProperty> { new MetadataSpecProperty("pc_windows") },
                     Genres = g.genres == null ? null : new HashSet<MetadataProperty>(g.genres.Select(x => new MetadataNameProperty(x))),
                     ReleaseDate = g.releaseYear.HasValue ? new ReleaseDate(g.releaseYear.Value) : (ReleaseDate?)null,
@@ -53,7 +53,7 @@ namespace GameManagerLibrary
                     InstallSize = (ulong)g.sizeBytes,
                     IsInstalled = dir != null,
                     InstallDirectory = dir,
-                    Links = new List<Link> { new Link("Game Manager", api.BaseUrl + "/games/" + g.id) },
+                    Links = new List<Link> { new Link("LootDen", api.BaseUrl + "/games/" + g.id) },
                 };
             }).ToList();
         }
@@ -74,7 +74,7 @@ namespace GameManagerLibrary
             var exe = Installs.GuessExecutable(args.Game.InstallDirectory);
             if (exe == null)
             {
-                PlayniteApi.Dialogs.ShowErrorMessage("No game executable found. Add a play action in Playnite (Edit, Actions) pointing at the game's .exe.", "Game Manager");
+                PlayniteApi.Dialogs.ShowErrorMessage("No game executable found. Add a play action in Playnite (Edit, Actions) pointing at the game's .exe.", "LootDen");
                 yield break;
             }
             yield return new AutomaticPlayController(args.Game)
@@ -97,7 +97,7 @@ namespace GameManagerLibrary
             }
             catch (Exception e)
             {
-                logger.Warn(e, "Game Manager: reporting play time failed");
+                logger.Warn(e, "LootDen: reporting play time failed");
             }
         }
 

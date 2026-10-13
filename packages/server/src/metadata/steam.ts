@@ -1,4 +1,4 @@
-import type { ControllerSupport } from "@game-manager/shared";
+import type { ControllerSupport } from "@lootden/shared";
 import { limitedJson, RateLimiter, type FetchLike } from "./http.js";
 import type { Candidate, MetadataProvider, ProviderResult } from "./types.js";
 

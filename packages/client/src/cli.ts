@@ -7,9 +7,11 @@ import { configPath, loadConfig, saveConfigValue } from "./config.js";
 import { listDrives } from "./drives.js";
 import { listInstalled, uninstallGame } from "./installed.js";
 import { installGame, pickGame, type InstallEvent } from "./installer.js";
+import { findSevenZip } from "./extractor.js";
 import { findExecutable, launchAndTrack, saveExecutable } from "./launcher.js";
+import { backupSaves, expandSavePath, restoreSaves } from "./saves.js";
 
-const HELP = `Game Manager client
+const HELP = `LootDen client
 
 Usage:
   gm login <username> [--server URL] Sign in and save a token for this computer
@@ -21,6 +23,9 @@ Usage:
       --keep-archives                Keep zip/7z/rar files after unpacking
   gm installed                       Games installed on this computer
   gm play <game>                     Launch an installed game and record play time
+  gm saves <game>                    List your save backups on the server
+  gm backup <game>                   Upload this PC's saves for an installed game
+  gm restore <game> [--id N]         Restore your newest (or chosen) save backup
   gm uninstall <game>                Delete an installed game from this computer
   gm drives                          Drives you can install to, with free space
   gm stats                           Library size and server disk space
@@ -180,6 +185,35 @@ async function main(argv: string[]): Promise<void> {
       const seconds = await launchAndTrack(game.dir, exe);
       await api.reportActivity({ gameId: game.gameId, device: os.hostname(), event: "played", seconds });
       console.log(`Played for ${Math.round(seconds / 60)} min`);
+      return;
+    }
+    case "saves":
+    case "backup":
+    case "restore": {
+      const installed = await listInstalled([config.installDir]);
+      const q = positional.join(" ").toLowerCase();
+      const local = installed.find((g) => g.gameId === q || g.title.toLowerCase() === q) ?? installed.find((g) => g.title.toLowerCase().includes(q));
+      const gameId = local?.gameId ?? pickGame(await api.listGames(), positional.join(" ")).id;
+      if (command === "saves") {
+        for (const b of await api.listSaves(gameId)) console.log(`${String(b.id).padStart(5)}  ${b.createdAt}  ${formatBytes(b.size).padStart(9)}  ${b.device ?? ""}`);
+        return;
+      }
+      if (!local) throw new Error(`"${positional.join(" ")}" is not installed under ${config.installDir}`);
+      const game = await api.getGame(gameId);
+      if (!game.savePath) throw new Error(`No save location is set for ${game.title}; an admin can set it on the game's page`);
+      const dir = await expandSavePath(game.savePath, local.dir);
+      const sevenZip = await findSevenZip(config.sevenZipPath);
+      if (!sevenZip) throw new Error("7-Zip is needed for save backups");
+      if (command === "backup") {
+        const b = await backupSaves(api, sevenZip, gameId, dir, os.hostname());
+        console.log(`Uploaded ${formatBytes(b.size)} of saves from ${dir}`);
+        return;
+      }
+      const backups = await api.listSaves(gameId);
+      const chosen = typeof flags.id === "string" ? backups.find((b) => b.id === Number(flags.id)) : backups[0];
+      if (!chosen) throw new Error(`No save backups for ${game.title}`);
+      const { previous } = await restoreSaves(api, sevenZip, gameId, chosen.id, dir);
+      console.log(`Restored the ${chosen.createdAt} backup to ${dir}${previous ? `; your old saves are in ${previous}` : ""}`);
       return;
     }
     case "uninstall": {

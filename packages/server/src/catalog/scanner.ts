@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
-import { archiveKindOf, type GameFile, type GameSummary } from "@game-manager/shared";
+import { archiveKindOf, setupKindOf, type GameFile, type GameSummary } from "@lootden/shared";
 
 /** What the scanner knows from disk alone; the library adds database and metadata fields. */
 export type ScannedGame = Pick<
   GameSummary,
-  "id" | "title" | "source" | "layout" | "sizeBytes" | "fileCount" | "packed" | "modifiedAt"
+  "id" | "title" | "source" | "layout" | "sizeBytes" | "fileCount" | "packed" | "needsSetup" | "modifiedAt"
 > & { files: GameFile[] };
 
 /** Files that are never part of a game (OS clutter, partial transfers). */
@@ -58,6 +58,7 @@ function summarize(id: string, source: string, layout: ScannedGame["layout"], fi
     sizeBytes: files.reduce((sum, f) => sum + f.size, 0),
     fileCount: files.length,
     packed: files.some((f) => f.archive !== undefined),
+    needsSetup: setupKindOf(files),
     modifiedAt: newest || new Date(0).toISOString(),
     files,
   };

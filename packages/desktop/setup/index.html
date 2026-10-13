@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:" />
-    <title>Connect to your Game Manager server</title>
+    <title>Connect to your LootDen server</title>
     <style>
       body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: radial-gradient(900px 500px at 10% -10%, #3b136b, transparent 60%), #0d0820; color: #f3eeff; font: 16px/1.5 "Segoe UI", system-ui, sans-serif; }
       form { width: min(440px, 90vw); background: rgba(36, 22, 74, 0.8); border: 1px solid rgba(160, 120, 255, 0.25); border-radius: 18px; padding: 2rem; display: flex; flex-direction: column; gap: 1rem; text-align: center; }
@@ -17,8 +17,8 @@
   <body>
     <form id="f">
       <img src="../build/icon.png" width="96" height="96" alt="" onerror="this.remove()" />
-      <h1 style="margin: 0">Game Manager</h1>
-      <p class="muted">Enter the address of your Game Manager server, for example <b>http://tower:8080</b>.</p>
+      <h1 style="margin: 0">LootDen</h1>
+      <p class="muted">Enter the address of your LootDen server, for example <b>http://tower:8080</b>.</p>
       <input id="url" placeholder="http://tower:8080" autofocus required />
       <button>Connect</button>
       <p class="error" id="err"></p>

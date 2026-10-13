@@ -38,7 +38,7 @@ export function AdminApps({ onMessage }: { onMessage: (m: string) => void }) {
         there directly.
       </p>
       <div className="inline">
-        <input placeholder="GitHub repository, e.g. you/game-manager" value={repo} onChange={(e) => setRepo(e.target.value)} style={{ flex: 1 }} />
+        <input placeholder="GitHub repository, e.g. you/lootden" value={repo} onChange={(e) => setRepo(e.target.value)} style={{ flex: 1 }} />
         <button
           disabled={!!busy || !repo.trim()}
           onClick={() =>
