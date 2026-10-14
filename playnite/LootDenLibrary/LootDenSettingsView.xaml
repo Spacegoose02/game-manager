@@ -1,4 +1,4 @@
-<UserControl x:Class="GameManagerLibrary.GameManagerSettingsView"
+<UserControl x:Class="LootDenLibrary.LootDenSettingsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <StackPanel Margin="20">

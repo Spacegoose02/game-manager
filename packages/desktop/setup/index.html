@@ -29,7 +29,7 @@
         const err = document.getElementById("err");
         err.textContent = "Connecting…";
         try {
-          await window.gameManagerSetup.connect(document.getElementById("url").value.trim());
+          await window.lootdenSetup.connect(document.getElementById("url").value.trim());
         } catch (x) {
           err.textContent = String(x.message || x).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
         }

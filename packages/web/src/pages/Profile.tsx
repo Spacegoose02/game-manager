@@ -78,9 +78,10 @@ export function Profile() {
                 <input value={name} onChange={(e) => setName(e.target.value)} aria-label="Display name" />
                 <button onClick={() => act(async () => { await api.updateMe({ displayName: name }); await refresh(); }, "Name saved")}>Save name</button>
               </div>
-              <button className="secondary" onClick={() => act(async () => { await api.updateMe({ avatar: "random" }); await refresh(); }, "New avatar!")}>
-                🎲 Random gaming avatar
-              </button>
+              <RaccoonPicker
+                current={user.avatar}
+                onPick={(seed) => act(async () => { await api.updateMe({ avatar: seed }); await refresh(); }, "New raccoon!")}
+              />
               <p className="muted small">
                 @{user.username} · {user.role}
                 {user.kidMode ? " · kid profile" : ""}
@@ -126,7 +127,7 @@ export function Profile() {
 
           <section className="panel">
             <h2>Devices and tokens</h2>
-            <p className="muted small">Each computer signed in with the LootDen app or <code>gm login</code> gets its own token. Revoke one to sign that device out.</p>
+            <p className="muted small">Each computer signed in with the LootDen app or <code>lootden login</code> gets its own token. Revoke one to sign that device out.</p>
             <ul className="list">
               {tokens.map((t) => (
                 <li key={t.id}>
@@ -221,5 +222,27 @@ function ThisComputer() {
       </ul>
       {installed.length === 0 && <p className="muted">No games installed on this computer yet.</p>}
     </section>
+  );
+}
+
+const newSeed = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => b.toString(16).padStart(2, "0")).join("");
+const seedBatch = () => Array.from({ length: 8 }, newSeed);
+
+/** Eight random raccoons to choose from, and a button for eight more. */
+function RaccoonPicker({ current, onPick }: { current: string; onPick: (seed: string) => void }) {
+  const [seeds, setSeeds] = useState(seedBatch);
+  return (
+    <div className="raccoon-picker">
+      <div className="raccoon-grid" role="listbox" aria-label="Pick a raccoon">
+        {seeds.map((seed) => (
+          <button key={seed} role="option" aria-selected={seed === current} className={seed === current ? "active" : ""} onClick={() => onPick(seed)} title="Use this raccoon">
+            <img src={avatarUrl(seed)} alt="" width={48} height={48} />
+          </button>
+        ))}
+      </div>
+      <button className="secondary small" onClick={() => setSeeds(seedBatch())}>
+        🎲 More raccoons
+      </button>
+    </div>
   );
 }

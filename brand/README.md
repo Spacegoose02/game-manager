@@ -19,6 +19,6 @@ you leave out keeps the built-in LootDen raccoon.
 - **Desktop app**: `npm run build:desktop` (and the `dist` scripts) copy `icon.png` into
   `packages/desktop/build/` first.
 - **Playnite extension**: run `npm run brand` before building it in Visual Studio; it copies
-  `playnite-icon.png` into `playnite/GameManagerLibrary/`.
+  `playnite-icon.png` into `playnite/LootDenLibrary/`.
 
 The files here now are the current LootDen ones, so replacing them is all it takes.

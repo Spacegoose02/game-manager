@@ -59,6 +59,9 @@ Status: `[x]` done, `[~]` partly done, `[ ]` not started.
 - [x] Featured home page with categories (continue playing, recently added, top rated, controller friendly, per genre)
 - [x] Raccoon logo: a raccoon gaming on the couch (picked from five concepts)
 - [x] Renamed to LootDen, keeping old data folders, settings and `gamemanager://` links working
+- [x] 0.7: LootDen everywhere (repository, image, `LOOTDEN_` variables, `.lootden.json`, `lootden` CLI, Playnite plugin), with the old names still accepted
+- [x] Random raccoon avatars with a picker on the profile page
+- [x] Documentation for new users: README, docs/ guides, FAQ, contributing
 - [x] RSS gaming news with admin-managed feeds
 - [x] YouTube video rows (Glance-style groups of channels, e.g. Game Trailers, Game Reviews) on the News and Home pages, played in place
 - [x] Fuller home page: featured hero with artwork, library rows mixed with latest news, videos and upcoming releases

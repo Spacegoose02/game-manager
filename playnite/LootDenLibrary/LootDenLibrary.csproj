@@ -4,8 +4,8 @@
     <TargetFramework>net462</TargetFramework>
     <UseWPF>true</UseWPF>
     <LangVersion>8.0</LangVersion>
-    <AssemblyName>GameManagerLibrary</AssemblyName>
-    <RootNamespace>GameManagerLibrary</RootNamespace>
+    <AssemblyName>LootDenLibrary</AssemblyName>
+    <RootNamespace>LootDenLibrary</RootNamespace>
     <Version>0.2.0</Version>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>

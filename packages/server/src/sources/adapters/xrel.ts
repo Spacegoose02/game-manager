@@ -33,27 +33,50 @@ interface XrelLatestResponse {
   list?: XrelRelease[];
 }
 
-// Helper to sanitize the scene directory name if a clean title isn't available
+/**
+ * Strips release groups, console/platform tags, versions, and scene flags
+ * so game databases (IGDB/Steam) can match the clean title.
+ */
 function cleanSceneName(rawName: string): string {
-  return rawName
-    .replace(/-[A-Za-z0-9_]+$/, "") // Remove release group
-    .replace(/[_.]?(DLC|Unlocker|NSW|SWITCH|MULTI\d*|v\d+(\.\d+)*)[_.]?/gi, " ") // Remove tags
-    .replace(/[._]/g, " ") // Replace dots and underscores
-    .replace(/\s+/g, " ") // Collapse multiple spaces
-    .trim();
+  let name = rawName.trim();
+
+  // 1. Remove release group at the end (-VENOM, -RUNE, -TENOKE, etc.)
+  name = name.replace(/[-_][A-Za-z0-9_]+$/i, "");
+
+  // 2. Strip platform identifiers
+  name = name.replace(/\b(NSW|SWITCH|PC|WIN|LINUX|OSX|MAC|PS4|PS5|XBOX|XBOXONE|XBOX360)\b/gi, " ");
+
+  // 3. Strip release tags and markers
+  name = name.replace(
+    /\b(DLC|Unlocker|Update|Repack|MULTi\d*|PROPER|REPACK|CRACK|PATCH|RIP|DELUXE|EDITION|GOTY)\b/gi,
+    " "
+  );
+
+  // 4. Strip version numbers (v1.0, 1.0.2, etc.) and standalone 4-digit years
+  name = name.replace(/\bv?\d+(\.\d+)+[a-z]?\b/gi, " ");
+  name = name.replace(/\b(19\d\d|20[0-3]\d)\b/g, " ");
+
+  // 5. Convert separators (underscores, dots, dashes) to spaces
+  name = name.replace(/[._\-]/g, " ");
+
+  // 6. Normalize whitespace
+  return name.replace(/\s+/g, " ").trim();
 }
 
 function toRelease(item: XrelRelease, source: "scene" | "p2p"): ReleaseInfo | null {
-  // Only process master_game entries
-  if (item.ext_info?.type !== "master_game") {
+  // If ext_info is present, ensure it's not a movie/tv/music release
+  if (item.ext_info?.type && item.ext_info.type !== "master_game") {
     return null;
   }
 
   const rawDirname = item.dirname?.trim();
   if (!rawDirname) return null;
 
-  // Use xREL's clean game title if available, otherwise sanitize the dirname
-  const displayTitle = item.ext_info?.title?.trim() || cleanSceneName(rawDirname);
+  // Prefer clean DB title from ext_info, otherwise clean the dirname aggressively
+  const cleanedTitle = cleanSceneName(rawDirname);
+  const displayTitle = item.ext_info?.title?.trim() || cleanedTitle;
+
+  if (!displayTitle) return null;
 
   const isP2p = source === "p2p";
   const timestamp = (isP2p ? item.pub_time : item.time) ?? Math.floor(Date.now() / 1000);
@@ -70,7 +93,7 @@ function toRelease(item: XrelRelease, source: "scene" | "p2p"): ReleaseInfo | nu
 
   const details: Record<string, string> = {
     Source: source,
-    ReleaseName: rawDirname, // Preserve exact folder name
+    ReleaseName: rawDirname,
   };
   if (groupName) details["Group"] = groupName;
   if (sizeMb) details["SizeMB"] = String(sizeMb);
@@ -78,12 +101,12 @@ function toRelease(item: XrelRelease, source: "scene" | "p2p"): ReleaseInfo | nu
 
   return {
     id: `xrel:${source}:${item.id}`,
-    title: displayTitle, // Search engine now uses the clean title
+    title: displayTitle,
     date: isoDate(dateStr),
     platform: "pc",
     url: item.link_href ?? null,
     image: null,
-    summary: rawDirname, // Shows the scene string in the UI summary
+    summary: rawDirname,
     details,
   };
 }
@@ -94,7 +117,6 @@ export const xrel: ReleaseSource = {
   description: "Tracks scene and P2P game releases from xREL.",
   defaultBaseUrl: "https://xrel-api.nfos.to",
   needsKey: false,
-  // xREL enforces 900 calls/hour and search max 2 calls per 5 seconds (~24/min)
   limits: { perMinute: 24, perHour: 900 },
 
   latest: async (ctx: SourceContext): Promise<ReleaseInfo[]> => {

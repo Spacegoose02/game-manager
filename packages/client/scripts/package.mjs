@@ -16,11 +16,11 @@ const sevenBinDir = path.dirname(require.resolve("7zip-bin"));
 const only = process.argv[2];
 
 const targets = [
-  { name: "win-x64", pkg: "node22-win-x64", exe: "gm.exe", sevenZip: ["win", "x64", "7za.exe"] },
-  { name: "linux-x64", pkg: "node22-linux-x64", exe: "gm", sevenZip: ["linux", "x64", "7za"] },
+  { name: "win-x64", pkg: "node22-win-x64", exe: "lootden.exe", sevenZip: ["win", "x64", "7za.exe"] },
+  { name: "linux-x64", pkg: "node22-linux-x64", exe: "lootden", sevenZip: ["linux", "x64", "7za"] },
 ].filter((t) => !only || t.name.startsWith(only));
 
-const bundle = path.join(root, "build", "gm.cjs");
+const bundle = path.join(root, "build", "lootden.cjs");
 await build({
   entryPoints: [path.join(root, "dist", "src", "cli.js")],
   bundle: true,

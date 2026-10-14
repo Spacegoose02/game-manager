@@ -29,7 +29,7 @@ export function GameDetail() {
   if (error) return <p className="error">{error}</p>;
   if (!game) return <p className="muted">Loading…</p>;
   const m = game.metadata;
-  const command = `gm install ${game.id}`;
+  const command = `lootden install ${game.id}`;
 
   return (
     <article className="detail">

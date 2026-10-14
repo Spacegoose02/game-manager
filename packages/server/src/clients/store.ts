@@ -14,7 +14,7 @@ export interface ClientFile {
   kind: string;
 }
 
-const ALLOWED = /\.(exe|msi|appimage|deb|rpm|zip|7z|tar\.gz|pext)$|^gm(-linux|-win)?[\w.-]*$/i;
+const ALLOWED = /\.(exe|msi|appimage|deb|rpm|zip|7z|tar\.gz|pext)$|^(gm|lootden)(-cli)?(-linux|-win)?[\w.-]*$/i;
 
 /** Names the app and plugin files the release workflow produces; anything else is "Other". */
 export function describe(name: string): Pick<ClientFile, "platform" | "kind"> {
@@ -23,7 +23,8 @@ export function describe(name: string): Pick<ClientFile, "platform" | "kind"> {
   if (n.endsWith(".appimage")) return { platform: "linux", kind: "Desktop app (AppImage)" };
   if (n.endsWith(".deb")) return { platform: "linux", kind: "Desktop app (Debian/Ubuntu package)" };
   if (n.endsWith(".rpm")) return { platform: "linux", kind: "Desktop app (Fedora package)" };
-  if (/^gm(\.exe)?$/.test(n) || /^gm[-_]/.test(n)) return { platform: n.includes("win") || n.endsWith(".exe") ? "windows" : "linux", kind: "Command-line client" };
+  // The CLI: lootden(.exe) and lootden-cli-*, or gm from before the rename.
+  if (/^(gm|lootden)(\.exe)?$/.test(n) || /^(gm|lootden-cli)[-_]/.test(n)) return { platform: n.includes("win") || n.endsWith(".exe") ? "windows" : "linux", kind: "Command-line client" };
   if (n.endsWith(".exe") || n.endsWith(".msi")) return { platform: "windows", kind: n.includes("setup") ? "Desktop app (installer)" : "Desktop app" };
   return { platform: "other", kind: "Download" };
 }

@@ -4,15 +4,12 @@
 services:
   lootden:
     build: .
-    image: ${GM_IMAGE:-ghcr.io/your-github-user/lootden:latest}
+    image: ${LOOTDEN_IMAGE:-ghcr.io/spacegoose02/lootden:latest}
     container_name: lootden
     restart: unless-stopped
     ports:
-      - "${GM_PORT:-8080}:8080"
+      - "${HOST_PORT:-8080}:8080"
     env_file: .env
-    environment:
-      GM_GAMES_DIR: /games
-      GM_DATA_DIR: /data
     volumes:
       # Writable so finished downloads can be imported. Add :ro if you don't use the
       # Downloads page and want the server unable to change your library.

@@ -1,0 +1,11 @@
+# The Id is from before the rename to LootDen; changing it would make Playnite treat updates as a second plugin.
+Id: GameManager_Library_cb17f98c
+Name: LootDen
+Author: LootDen
+Version: 0.7.0
+Module: LootDenLibrary.dll
+Type: GameLibrary
+Icon: icon.png
+Links:
+  - Name: Source
+    Url: https://github.com/Spacegoose02/lootden

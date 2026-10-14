@@ -18,12 +18,14 @@ COPY brand brand
 RUN npx tsc -b packages/shared packages/server && npm run build -w @lootden/web
 
 FROM node:22-alpine
+LABEL org.opencontainers.image.title="LootDen" \
+      org.opencontainers.image.description="Self-hosted game library: browse, download and play the games you own" \
+      org.opencontainers.image.source="https://github.com/Spacegoose02/lootden"
+# The server defaults to /games, /data and port 8080; LOOTDEN_GAMES_DIR, LOOTDEN_DATA_DIR and
+# LOOTDEN_PORT (or the older GM_ names) change them.
 ENV NODE_ENV=production \
     PUID=99 \
-    PGID=100 \
-    GM_GAMES_DIR=/games \
-    GM_DATA_DIR=/data \
-    GM_PORT=8080
+    PGID=100
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
@@ -38,11 +40,14 @@ COPY --from=build /app/packages/shared/dist packages/shared/dist
 COPY --from=build /app/packages/server/dist/src packages/server/dist/src
 COPY --from=build /app/packages/web/dist packages/web/dist
 COPY docker-entrypoint.sh /usr/local/bin/
-# 7-Zip unpacks and re-zips finished downloads during import.
-RUN apk add --no-cache 7zip && mkdir -p /games /data
+# 7-Zip unpacks and re-zips finished downloads during import. The entrypoint is made
+# executable with Unix line endings here, because a Windows checkout can lose both.
+RUN apk add --no-cache 7zip && mkdir -p /games /data \
+    && sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
+    && chmod 755 /usr/local/bin/docker-entrypoint.sh
 EXPOSE 8080
 VOLUME ["/data"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
-  CMD wget -qO- http://127.0.0.1:${GM_PORT}/api/health >/dev/null || exit 1
-ENTRYPOINT ["docker-entrypoint.sh"]
+  CMD wget -qO- "http://127.0.0.1:${LOOTDEN_PORT:-${GM_PORT:-8080}}/api/health" >/dev/null || exit 1
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["node", "--disable-warning=ExperimentalWarning", "packages/server/dist/src/index.js"]

@@ -7,7 +7,10 @@ import { downloadFile } from "./downloader.js";
 import { extractArchive, findSevenZip } from "./extractor.js";
 import { detectSetup } from "./installed.js";
 
-export const MANIFEST_NAME = ".game-manager.json";
+export const MANIFEST_NAME = ".lootden.json";
+/** The manifest's name before the rename to LootDen; still read, and replaced on the next write. */
+export const LEGACY_MANIFEST_NAME = ".game-manager.json";
+export const isManifest = (name: string) => name === MANIFEST_NAME || name === LEGACY_MANIFEST_NAME;
 
 export type InstallEvent =
   | { type: "start"; game: GameDetail; gameDir: string }
@@ -51,7 +54,7 @@ function localPath(gameDir: string, relPath: string): string {
 
 /** Repacks often wrap everything in one folder; lift its contents up so the game isn't nested twice. */
 async function hoistSingleFolder(gameDir: string): Promise<void> {
-  const entries = (await readdir(gameDir, { withFileTypes: true })).filter((e) => e.name !== MANIFEST_NAME);
+  const entries = (await readdir(gameDir, { withFileTypes: true })).filter((e) => !isManifest(e.name));
   if (entries.length !== 1 || !entries[0]!.isDirectory()) return;
   const wrapper = path.join(gameDir, `.gm-hoist-${Date.now()}`);
   await rename(path.join(gameDir, entries[0]!.name), wrapper);
@@ -117,6 +120,7 @@ export async function installGame(api: GameServerClient, gameId: string, opts: I
 
   // An installer inside an archive only shows once it's unpacked, so check the files we ended up with too.
   const needsSetup = game.platform === "pc" ? (game.needsSetup ?? (await detectSetup(gameDir))) : null;
+  await rm(path.join(gameDir, LEGACY_MANIFEST_NAME), { force: true });
   await writeFile(
     path.join(gameDir, MANIFEST_NAME),
     JSON.stringify(

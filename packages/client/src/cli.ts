@@ -11,10 +11,10 @@ import { findSevenZip } from "./extractor.js";
 import { findExecutable, launchAndTrack, saveExecutable } from "./launcher.js";
 import { backupSaves, expandSavePath, restoreSaves } from "./saves.js";
 import { biosFromServer, emulatorOverview, EMULATORS, installEmulator, playEmulated } from "./emulators.js";
-import { configDir } from "./config.js";
+import { configDir, envVar } from "./config.js";
 
 /** Emulators, BIOS files and their saves for the command-line client. */
-const toolsDir = () => process.env.GM_TOOLS_DIR || path.join(configDir(), "emulators");
+const toolsDir = () => envVar("TOOLS_DIR") || path.join(configDir(), "emulators");
 
 async function needSevenZip(configured: string) {
   const s = await findSevenZip(configured);
@@ -25,30 +25,30 @@ async function needSevenZip(configured: string) {
 const HELP = `LootDen client
 
 Usage:
-  gm login <username> [--server URL] Sign in and save a token for this computer
-  gm whoami                          Show who you are signed in as
-  gm list [search]                   List games on the server
-  gm info <game>                     Show a game's files
-  gm install <game> [options]        Download, unpack and remove archives
+  lootden login <username> [--server URL] Sign in and save a token for this computer
+  lootden whoami                          Show who you are signed in as
+  lootden list [search]                   List games on the server
+  lootden info <game>                     Show a game's files
+  lootden install <game> [options]        Download, unpack and remove archives
       --dest <folder>                Install under this folder (any drive), instead of installDir
       --keep-archives                Keep zip/7z/rar files after unpacking
-  gm installed                       Games installed on this computer
-  gm play <game>                     Launch an installed game and record play time
-  gm emulators                       Show emulators, versions and missing BIOS files
-  gm emulators install <id>          Download an emulator from its official releases
-  gm bios pull                       Copy the server's BIOS files into the emulators
-  gm saves <game>                    List your save backups on the server
-  gm backup <game>                   Upload this PC's saves for an installed game
-  gm restore <game> [--id N]         Restore your newest (or chosen) save backup
-  gm uninstall <game>                Delete an installed game from this computer
-  gm drives                          Drives you can install to, with free space
-  gm stats                           Library size and server disk space
-  gm rescan                          Ask the server to rescan its games folder
-  gm config show | path              Show settings or where they are stored
-  gm config set <key> <value>        Keys: serverUrl, apiToken, installDir, sevenZipPath, keepArchives
+  lootden installed                       Games installed on this computer
+  lootden play <game>                     Launch an installed game and record play time
+  lootden emulators                       Show emulators, versions and missing BIOS files
+  lootden emulators install <id>          Download an emulator from its official releases
+  lootden bios pull                       Copy the server's BIOS files into the emulators
+  lootden saves <game>                    List your save backups on the server
+  lootden backup <game>                   Upload this PC's saves for an installed game
+  lootden restore <game> [--id N]         Restore your newest (or chosen) save backup
+  lootden uninstall <game>                Delete an installed game from this computer
+  lootden drives                          Drives you can install to, with free space
+  lootden stats                           Library size and server disk space
+  lootden rescan                          Ask the server to rescan its games folder
+  lootden config show | path              Show settings or where they are stored
+  lootden config set <key> <value>        Keys: serverUrl, apiToken, installDir, sevenZipPath, keepArchives
 
 <game> is an id, a title, or part of a title.
-Environment overrides: GM_SERVER, GM_TOKEN, GM_INSTALL_DIR, GM_7Z, GM_CONFIG.`;
+Environment overrides: LOOTDEN_SERVER, LOOTDEN_TOKEN, LOOTDEN_INSTALL_DIR, LOOTDEN_7Z, LOOTDEN_CONFIG (the older GM_ names still work).`;
 
 function formatBytes(n: number): string {
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -137,7 +137,7 @@ async function main(argv: string[]): Promise<void> {
   switch (command) {
     case "login": {
       const username = positional[0];
-      if (!username) throw new Error("Usage: gm login <username> [--server http://tower:8080]");
+      if (!username) throw new Error("Usage: lootden login <username> [--server http://tower:8080]");
       if (typeof flags.server === "string") {
         config.serverUrl = flags.server;
         await saveConfigValue("serverUrl", flags.server);
@@ -167,7 +167,7 @@ async function main(argv: string[]): Promise<void> {
       return;
     }
     case "install": {
-      if (positional.length === 0) throw new Error("Which game? Usage: gm install <game>");
+      if (positional.length === 0) throw new Error("Which game? Usage: lootden install <game>");
       const summary = pickGame(await api.listGames(), positional.join(" "));
       await installGame(api, summary.id, {
         installDir: path.resolve(typeof flags.dest === "string" ? flags.dest : config.installDir),
@@ -224,7 +224,7 @@ async function main(argv: string[]): Promise<void> {
       return;
     }
     case "bios": {
-      if (positional[0] !== "pull") throw new Error("Usage: gm bios pull");
+      if (positional[0] !== "pull") throw new Error("Usage: lootden bios pull");
       const r = await biosFromServer(api, toolsDir());
       console.log(r.added.length ? `Added ${r.added.join(", ")}` : "No BIOS files to add");
       if (r.skipped.length) console.log(`Skipped (set up their emulator first): ${r.skipped.join(", ")}`);

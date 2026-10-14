@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import { buildApp, loadConfig, openDatabase } from "@lootden/server/lib";
 import { GameServerClient } from "../src/api.js";
 import { findSevenZip } from "../src/extractor.js";
-import { adoptFolder, findCopies, listInstalled } from "../src/installed.js";
-import { installGame, MANIFEST_NAME } from "../src/installer.js";
+import { adoptFolder, findCopies, listInstalled, saveManifest } from "../src/installed.js";
+import { installGame, LEGACY_MANIFEST_NAME, MANIFEST_NAME } from "../src/installer.js";
 
 let work: string;
 before(async () => {
@@ -79,5 +79,19 @@ describe("installers and copies already on this PC", () => {
     assert.equal(adopted.gameId, "c1");
     assert.equal(adopted.needsSetup, null);
     assert.equal((await findCopies([root], celeste)).installed!.dir, path.join(root, "Celeste"));
+  });
+
+  it("still finds installs made before the rename, and moves them to the new manifest name", async () => {
+    const root = path.join(work, "legacy");
+    await mkdir(path.join(root, "Portal"), { recursive: true });
+    await writeFile(path.join(root, "Portal", "portal.exe"), "x");
+    await writeFile(path.join(root, "Portal", LEGACY_MANIFEST_NAME), JSON.stringify({ gameId: "p1", title: "Portal", platform: "pc", executable: "portal.exe" }));
+    const [found] = await listInstalled([root]);
+    assert.equal(found!.gameId, "p1");
+    assert.equal(found!.executable, "portal.exe");
+    assert.equal((await findCopies([root], { id: "p1", title: "Portal", source: "Portal", platform: "pc" })).loose.length, 0);
+    await saveManifest(path.join(root, "Portal"), { executable: "bin/portal.exe" });
+    assert.deepEqual((await readdir(path.join(root, "Portal"))).sort(), [MANIFEST_NAME, "portal.exe"]);
+    assert.equal((await manifest(path.join(root, "Portal"))).gameId, "p1");
   });
 });

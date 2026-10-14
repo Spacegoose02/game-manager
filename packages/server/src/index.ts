@@ -1,3 +1,4 @@
+import "./legacy-env.js";
 import "./privileges.js";
 import { existsSync } from "node:fs";
 import { access, constants, mkdir } from "node:fs/promises";
@@ -21,7 +22,7 @@ const { app, ctx } = buildApp(config, db, { webDir });
 
 if (ctx.users.count() === 0 && config.admin.username && config.admin.password) {
   await ctx.users.create({ username: config.admin.username, password: config.admin.password, role: "admin" });
-  app.log.info({ username: config.admin.username }, "Created the first admin from GM_ADMIN_USERNAME");
+  app.log.info({ username: config.admin.username }, "Created the first admin from LOOTDEN_ADMIN_USERNAME");
 }
 if (ctx.users.count() === 0) app.log.warn("No accounts yet: open the web UI to create the first admin.");
 if (config.oidc.issuer && !config.publicUrl) app.log.warn("GM_OIDC_ISSUER is set but GM_PUBLIC_URL is not; single sign-on stays off.");

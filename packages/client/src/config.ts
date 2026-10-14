@@ -25,7 +25,7 @@ export function configDir(): string {
 }
 
 export function configPath(): string {
-  return process.env.GM_CONFIG || path.join(configDir(), "config.json");
+  return envVar("CONFIG") || path.join(configDir(), "config.json");
 }
 
 export function defaults(): ClientConfig {
@@ -38,6 +38,9 @@ export function defaults(): ClientConfig {
   };
 }
 
+/** LOOTDEN_<name>, or GM_<name> from before the rename. */
+export const envVar = (name: string): string | undefined => process.env[`LOOTDEN_${name}`] || process.env[`GM_${name}`] || undefined;
+
 /** Defaults, then the config file, then environment variables. */
 export async function loadConfig(): Promise<ClientConfig> {
   const config = defaults();
@@ -46,10 +49,10 @@ export async function loadConfig(): Promise<ClientConfig> {
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw new Error(`Could not read ${configPath()}: ${(err as Error).message}`);
   }
-  if (process.env.GM_SERVER) config.serverUrl = process.env.GM_SERVER;
-  if (process.env.GM_TOKEN) config.apiToken = process.env.GM_TOKEN;
-  if (process.env.GM_INSTALL_DIR) config.installDir = process.env.GM_INSTALL_DIR;
-  if (process.env.GM_7Z) config.sevenZipPath = process.env.GM_7Z;
+  if (envVar("SERVER")) config.serverUrl = envVar("SERVER")!;
+  if (envVar("TOKEN")) config.apiToken = envVar("TOKEN")!;
+  if (envVar("INSTALL_DIR")) config.installDir = envVar("INSTALL_DIR")!;
+  if (envVar("7Z")) config.sevenZipPath = envVar("7Z")!;
   return config;
 }
 

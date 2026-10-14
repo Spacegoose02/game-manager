@@ -1,8 +1,9 @@
 import { contextBridge, ipcRenderer } from "electron";
 
-// The web UI checks for window.gameManager to switch from "copy this command"
-// to real install, play and uninstall buttons.
-contextBridge.exposeInMainWorld("gameManager", {
+// The web UI checks for window.lootden to switch from "copy this command" to real install,
+// play and uninstall buttons. It's also exposed as window.gameManager, its name before the
+// rename, for server versions from before 0.7.
+const bridge = {
   version: 1,
   info: () => ipcRenderer.invoke("gm:info"),
   drives: () => ipcRenderer.invoke("gm:drives"),
@@ -34,9 +35,11 @@ contextBridge.exposeInMainWorld("gameManager", {
     ipcRenderer.on("gm:progress", listener);
     return () => ipcRenderer.removeListener("gm:progress", listener);
   },
-});
+};
+contextBridge.exposeInMainWorld("lootden", bridge);
+contextBridge.exposeInMainWorld("gameManager", bridge);
 
 // The local setup page only needs to save the server address.
-contextBridge.exposeInMainWorld("gameManagerSetup", {
+contextBridge.exposeInMainWorld("lootdenSetup", {
   connect: (url: string) => ipcRenderer.invoke("gm:setServer", url),
 });

@@ -2364,3 +2364,29 @@ label.field {
 .row-note {
   margin: -0.4rem 0 0.6rem;
 }
+.raccoon-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.6rem 0;
+}
+.raccoon-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.raccoon-grid button {
+  padding: 2px;
+  border-radius: 12px;
+  border: 2px solid transparent;
+  background: none;
+  line-height: 0;
+}
+.raccoon-grid button:hover,
+.raccoon-grid button.active {
+  border-color: var(--accent);
+}
+.raccoon-grid img {
+  border-radius: 10px;
+}

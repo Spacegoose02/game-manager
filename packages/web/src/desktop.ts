@@ -79,7 +79,9 @@ export interface DesktopBridge {
 
 type GameDetailLike = { id: string };
 
-export const desktop: DesktopBridge | undefined = (window as unknown as { gameManager?: DesktopBridge }).gameManager;
+// Desktop apps from before the rename to LootDen expose the bridge as window.gameManager.
+const w = window as unknown as { lootden?: DesktopBridge; gameManager?: DesktopBridge };
+export const desktop: DesktopBridge | undefined = w.lootden ?? w.gameManager;
 
 /** Electron prefixes errors from the main process; keep just the message. */
 export const bridgeError = (e: unknown) => String((e as Error)?.message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");

@@ -8,6 +8,7 @@ import {
   addBiosFile,
   adoptFolder,
   findCopies,
+  isManifest,
   runLocalSetup,
   saveManifest,
   biosFromServer,
@@ -514,7 +515,7 @@ function registerIpc(): void {
       const rel = path.relative(game.dir, folder);
       if (rel && !rel.startsWith("..") && !path.isAbsolute(rel)) {
         const top = rel.split(path.sep)[0]!;
-        const leftovers = (await readdir(game.dir)).filter((n) => n !== top && n !== ".game-manager.json");
+        const leftovers = (await readdir(game.dir)).filter((n) => n !== top && !isManifest(n));
         const { response } = await dialog.showMessageBox(win!, {
           type: "question",
           buttons: ["Delete installer files", "Keep them"],

@@ -6,18 +6,18 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace GameManagerLibrary
+namespace LootDenLibrary
 {
     /// <summary>
     /// Hands the install to the desktop app (lootden://install/id), then waits for the server
     /// to say this PC has it. The desktop app does the download, unpack and archive cleanup.
     /// </summary>
-    public class GameManagerInstallController : InstallController
+    public class LootDenInstallController : InstallController
     {
         private readonly ServerApi api;
         private CancellationTokenSource watch;
 
-        public GameManagerInstallController(Game game, ServerApi api) : base(game)
+        public LootDenInstallController(Game game, ServerApi api) : base(game)
         {
             Name = "Install with LootDen";
             this.api = api;
@@ -65,11 +65,11 @@ namespace GameManagerLibrary
         }
     }
 
-    public class GameManagerUninstallController : UninstallController
+    public class LootDenUninstallController : UninstallController
     {
         private readonly ServerApi api;
 
-        public GameManagerUninstallController(Game game, ServerApi api) : base(game)
+        public LootDenUninstallController(Game game, ServerApi api) : base(game)
         {
             Name = "Uninstall";
             this.api = api;

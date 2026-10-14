@@ -6,10 +6,11 @@ set -e
 if [ "$(id -u)" = "0" ]; then
   PUID="${PUID:-99}"
   PGID="${PGID:-100}"
-  mkdir -p "$GM_DATA_DIR"
-  if [ "$(stat -c %u:%g "$GM_DATA_DIR")" != "$PUID:$PGID" ]; then
-    echo "Setting owner of $GM_DATA_DIR to $PUID:$PGID"
-    chown -R "$PUID:$PGID" "$GM_DATA_DIR"
+  DATA_DIR="${LOOTDEN_DATA_DIR:-${GM_DATA_DIR:-/data}}"
+  mkdir -p "$DATA_DIR"
+  if [ "$(stat -c %u:%g "$DATA_DIR")" != "$PUID:$PGID" ]; then
+    echo "Setting owner of $DATA_DIR to $PUID:$PGID"
+    chown -R "$PUID:$PGID" "$DATA_DIR"
   fi
 fi
 exec "$@"

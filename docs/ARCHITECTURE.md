@@ -10,7 +10,7 @@
  │  auth: local, OIDC (TinyAuth), fwd headers  │  or    │  play-time tracking              │
  │  REST API, ranged file downloads, web UI    │ token  │                                  │
  │  connectors: Prowlarr, qBittorrent, SABnzbd │        │ Playnite plugin ─► lootden://     │
- │                                             │        │ gm CLI (same engine)             │
+ │                                             │        │ lootden CLI (same engine)        │
  │  /games  /downloads  /data (db, covers)     │        │                                  │
  └─────────────────────────────────────────────┘        └──────────────────────────────────┘
 ```
@@ -22,7 +22,7 @@
 | `packages/shared` | API types and archive helpers (split-volume grouping, safe folder names). No dependencies. |
 | `packages/server` | Fastify 5 server. `src/index.ts` runs it; `src/lib.ts` exposes `buildApp` for tests. |
 | `packages/web` | React 19 + Vite web UI, served by the server and shown inside the desktop app. |
-| `packages/client` | Install engine (`installer`, `downloader`, `extractor`, `installed`, `launcher`, `drives`) and the `gm` CLI. |
+| `packages/client` | Install engine (`installer`, `downloader`, `extractor`, `installed`, `launcher`, `drives`) and the `lootden` CLI. |
 | `packages/desktop` | Electron shell: loads the server's UI and gives it install/play/uninstall through a preload bridge. |
 | `playnite` | C# Playnite library plugin. |
 
@@ -41,9 +41,9 @@
   cached in `/data/covers`. Kid-safe comes from age ratings (ESRB E/E10+, PEGI 3/7,
   USK 0/6, and equivalents); an admin override wins.
 - **Auth** (`auth/`): passwords use scrypt. Browser sessions are an HTTP-only cookie whose
-  sha256 is stored. Devices (desktop app, Playnite, `gm`) use personal tokens `gmt_…`,
+  sha256 is stored. Devices (desktop app, Playnite, `lootden`) use personal tokens `gmt_…`,
   also stored hashed. OIDC uses `openid-client` with PKCE. Forward-auth headers are
-  only read from `GM_TRUSTED_PROXIES`. Kid profiles get a filtered library server-side.
+  only read from `LOOTDEN_TRUSTED_PROXIES`. Kid profiles get a filtered library server-side.
 - **Connectors** (`connectors/`): Prowlarr search (category 4000, PC games); grabs go
   to qBittorrent (tagged `gm-<id>`) or SABnzbd. Every minute, finished downloads are
   copied or moved into `/games` (via `<name>.importing`, renamed when complete so the
@@ -58,8 +58,9 @@
 2. Archives are grouped into sets (`.part1.rar`, `.r00`, `.7z.001`, `.z01`). Each set is
    extracted once with 7-Zip; **only after 7-Zip succeeds** are its volumes deleted.
 3. If everything unpacked into one wrapper folder, its contents move up a level.
-4. `.game-manager.json` is written into the install folder (game id, title, chosen exe).
-   Uninstall refuses to delete any folder without it.
+4. `.lootden.json` is written into the install folder (game id, title, chosen exe, and
+   whether it's still an installer). Uninstall refuses to delete any folder without it
+   (or `.game-manager.json`, its name before the rename).
 5. The install is reported to the server, so the profile and Playnite know about it.
 
 7-Zip is looked up in this order: configured path, `Program Files\7-Zip`, `7zz`/`7z` on
@@ -67,7 +68,8 @@ PATH, then the bundled `7za` (zip and 7z only; RAR needs a full 7-Zip).
 
 ## Desktop app
 
-The window loads the server's web UI. `preload.ts` exposes `window.gameManager`
+The window loads the server's web UI. `preload.ts` exposes `window.lootden` (and
+`window.gameManager` for older servers)
 (install, play, uninstall, drives, choose folder) and the main process only answers
 calls coming from the configured server's origin. On first use it turns the browser
 session into a device token. It registers `lootden://install/<id>` so web links

@@ -1,7 +1,7 @@
 import { readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { safeFolderName, setupKindOf } from "@lootden/shared";
-import { MANIFEST_NAME } from "./installer.js";
+import { isManifest, LEGACY_MANIFEST_NAME, MANIFEST_NAME } from "./installer.js";
 
 export interface InstalledGame {
   gameId: string;
@@ -20,9 +20,19 @@ export interface InstalledGame {
   installedDir?: string;
 }
 
+/** The manifest file's contents: .lootden.json, or .game-manager.json from before the rename. */
+async function readManifestFile(dir: string): Promise<Record<string, unknown> | null> {
+  for (const name of [MANIFEST_NAME, LEGACY_MANIFEST_NAME]) {
+    const text = await readFile(path.join(dir, name), "utf8").catch(() => null);
+    if (text !== null) return JSON.parse(text);
+  }
+  return null;
+}
+
 async function readManifest(dir: string): Promise<InstalledGame | null> {
   try {
-    const m = JSON.parse(await readFile(path.join(dir, MANIFEST_NAME), "utf8"));
+    const m = (await readManifestFile(dir)) as Record<string, any> | null;
+    if (!m) return null;
     if (typeof m.gameId !== "string") return null;
     return {
       gameId: m.gameId,
@@ -42,16 +52,17 @@ async function readManifest(dir: string): Promise<InstalledGame | null> {
 
 /** Merges fields into a game's install manifest. */
 export async function saveManifest(dir: string, patch: Record<string, unknown>): Promise<void> {
-  const file = path.join(dir, MANIFEST_NAME);
-  const m = JSON.parse(await readFile(file, "utf8").catch(() => "{}"));
-  await writeFile(file, JSON.stringify({ ...m, ...patch }, null, 2) + "\n");
+  const m = (await readManifestFile(dir)) ?? {};
+  await writeFile(path.join(dir, MANIFEST_NAME), JSON.stringify({ ...m, ...patch }, null, 2) + "\n");
+  // Written under the new name now, so the old file can go.
+  await rm(path.join(dir, LEGACY_MANIFEST_NAME), { force: true });
 }
 
 async function listFiles(dir: string, depth: number, rel = "", out: string[] = []): Promise<string[]> {
   for (const e of await readdir(path.join(dir, rel), { withFileTypes: true }).catch(() => [])) {
     const r = rel ? `${rel}/${e.name}` : e.name;
     if (e.isDirectory() && depth > 0) await listFiles(dir, depth - 1, r, out);
-    else if (e.isFile() && e.name !== MANIFEST_NAME) out.push(r);
+    else if (e.isFile() && !isManifest(e.name)) out.push(r);
   }
   return out;
 }
@@ -124,7 +135,7 @@ export async function findCopies(installDirs: string[], game: GameRef): Promise<
   for (const root of new Set(installDirs.map((d) => path.resolve(d)))) {
     const dir = path.join(root, folder);
     const entries = await readdir(dir).catch(() => [] as string[]);
-    if (entries.length && !entries.includes(MANIFEST_NAME)) loose.push(dir);
+    if (entries.length && !entries.some(isManifest)) loose.push(dir);
   }
   return { installed: null, relinked: false, loose };
 }
@@ -134,6 +145,7 @@ export async function adoptFolder(dir: string, game: GameRef): Promise<Installed
   const s = await stat(dir).catch(() => null);
   if (!s?.isDirectory()) throw new Error(`${dir} is not a folder`);
   const needsSetup = game.platform === "pc" ? await detectSetup(dir) : null;
+  await rm(path.join(dir, LEGACY_MANIFEST_NAME), { force: true });
   await writeFile(
     path.join(dir, MANIFEST_NAME),
     JSON.stringify({ gameId: game.id, title: game.title, source: game.source, platform: game.platform, needsSetup, installedAt: new Date().toISOString(), adopted: true }, null, 2) + "\n",

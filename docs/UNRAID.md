@@ -1,43 +1,35 @@
 # Running on Unraid
 
-> **Upgrading from Game Manager?** Keep your existing container and its paths. Point the
-> Repository at the new `lootden` image (or rebuild with the new source) and leave the
-> `appdata` path on `/mnt/user/appdata/game-manager`: LootDen finds the old
-> `game-manager.db` there and carries on. Nothing else needs changing.
+> **Upgrading from Game Manager?** Keep your existing container and its paths, and change
+> the Repository to `ghcr.io/spacegoose02/lootden:latest`. Leave the `appdata` path on
+> `/mnt/user/appdata/game-manager`: LootDen finds the old `game-manager.db` there and
+> carries on. Your `GM_` variables keep working. See [UPGRADING.md](UPGRADING.md).
 
 ## Option A: Docker tab (Add Container)
 
-Build the image once on the server (until you publish releases, see below):
-
-```sh
-cd /mnt/user/appdata/lootden-src     # this repository, copied to the server
-docker build -t lootden:latest .
-```
-
-Then **Docker, Add Container**. Example with real paths:
+**Docker, Add Container**. Example with real paths:
 
 | Field | Value |
 | --- | --- |
 | Name | `lootden` |
-| Repository | `lootden:latest` (or `ghcr.io/<your-github-user>/lootden:latest` once released) |
+| Repository | `ghcr.io/spacegoose02/lootden:latest` |
 | Network | `Bridge` |
-| Extra Parameters | leave empty (don't add `--user`; see below) |
+| Extra Parameters | leave empty, or `--user 99:100` (see Permissions) |
 | WebUI | `http://[IP]:[PORT:8080]/` |
 | Port `web` | container `8080`, host `2435` (any free port) |
 | Path `appdata` | container `/data`, host `/mnt/user/appdata/lootden` |
 | Path `games` | container `/games`, host `/mnt/user/space/games/roms/` (see "Library folder" below) |
 | Path `downloads` (optional) | container `/downloads`, host the share your download clients finish into, e.g. `/mnt/user/downloads/` |
 | Variable (optional) | `PUID` / `PGID`: the user the server runs as, default `99` / `100` (nobody:users) |
-| Variable (optional) | `GM_ADMIN_USERNAME` and `GM_ADMIN_PASSWORD`, or create the admin on first visit |
-| Variable (optional) | `GM_IGDB_CLIENT_ID`, `GM_IGDB_CLIENT_SECRET` |
-| Variable (optional) | `GM_PUBLIC_URL` and the `GM_OIDC_*` variables for TinyAuth |
+| Variable (optional) | `LOOTDEN_ADMIN_USERNAME` and `LOOTDEN_ADMIN_PASSWORD`, or create the admin on first visit |
+| Variable (optional) | `LOOTDEN_IGDB_CLIENT_ID`, `LOOTDEN_IGDB_CLIENT_SECRET` |
+| Variable (optional) | `LOOTDEN_PUBLIC_URL` and the `LOOTDEN_OIDC_*` variables for TinyAuth |
 
 Leave the `games` path Read/Write if you use the Downloads page (imports are written
-there). Every variable is described in [.env.example](../.env.example).
+there). Every variable is described in [CONFIGURATION.md](CONFIGURATION.md).
 
-Once a `v*` tag has been pushed, the Release workflow publishes
-`ghcr.io/<your-github-user>/lootden`; make the package public (GitHub profile,
-Packages, lootden, Package settings) and use that as the Repository instead.
+To build the image yourself instead, copy this repository to the server and run
+`docker build -t lootden:latest .` in it, then use `lootden:latest` as the Repository.
 
 ### Permissions
 
@@ -45,8 +37,9 @@ The container starts as root only long enough to make the appdata folder belong 
 `PUID:PGID` (99:100 by default), then runs the server as that user. Files it imports into
 the games share are owned by nobody:users like the rest of Unraid.
 
-If the log says it "can't write to its data folder", you started it with `--user`:
-remove that from Extra Parameters, or run `chown -R 99:100 /mnt/user/appdata/lootden`.
+With `--user 99:100` in Extra Parameters the container skips that step, so the appdata
+folder must already belong to 99:100. If the log says it "can't write to its data
+folder", remove `--user`, or run `chown -R 99:100 /mnt/user/appdata/lootden`.
 
 ### Library folder
 
@@ -86,7 +79,7 @@ Set these up in the web UI under **Downloads, Connections**.
 - The server runs as `99:100` (nobody:users), which matches Unraid share permissions.
 - Games stream straight from disk; a cache pool is faster with many players at once.
 - Keep the port on your LAN, or put it behind a reverse proxy with HTTPS (SWAG, Nginx
-  Proxy Manager, Traefik). TinyAuth works through OIDC or forward auth (see the README).
+  Proxy Manager, Traefik). TinyAuth works through OIDC or forward auth (see [CONFIGURATION.md](CONFIGURATION.md#sign-in)).
 - Health check: `http://<unraid-ip>:8080/api/health` returns `{"status":"ok",...}`.
 - The **Get the app** page serves files from `/mnt/user/appdata/lootden/clients`.
 - Back up `/mnt/user/appdata/lootden`: it holds the database (profiles, play time,

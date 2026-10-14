@@ -4,7 +4,7 @@ export { CONFIG_KEYS, configDir, configPath, defaults, loadConfig, saveConfigVal
 export { listDrives, type Drive } from "./drives.js";
 export { extractArchive, findSevenZip } from "./extractor.js";
 export { adoptFolder, detectSetup, findCopies, listInstalled, saveManifest, uninstallGame, type GameRef, type InstalledGame } from "./installed.js";
-export { installGame, MANIFEST_NAME, pickGame, type InstallEvent, type InstallOptions } from "./installer.js";
+export { installGame, isManifest, LEGACY_MANIFEST_NAME, MANIFEST_NAME, pickGame, type InstallEvent, type InstallOptions } from "./installer.js";
 export { findExecutable, launchAndTrack, saveExecutable } from "./launcher.js";
 export * from "./emulators.js";
 export { backupSaves, expandSavePath, restoreSaves } from "./saves.js";

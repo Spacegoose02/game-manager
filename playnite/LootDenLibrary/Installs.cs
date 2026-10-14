@@ -4,9 +4,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-namespace GameManagerLibrary
+namespace LootDenLibrary
 {
-    /// <summary>The .game-manager.json file the desktop app writes into every install folder.</summary>
+    /// <summary>The .lootden.json file the desktop app writes into every install folder (.game-manager.json before the rename).</summary>
     public class InstallManifest
     {
         public string gameId { get; set; }
@@ -17,14 +17,19 @@ namespace GameManagerLibrary
 
     public static class Installs
     {
-        public const string ManifestName = ".game-manager.json";
+        public const string ManifestName = ".lootden.json";
+        public const string LegacyManifestName = ".game-manager.json";
 
         public static InstallManifest Read(string dir)
         {
             try
             {
-                var file = Path.Combine(dir, ManifestName);
-                return File.Exists(file) ? Serialization.FromJson<InstallManifest>(File.ReadAllText(file)) : null;
+                foreach (var name in new[] { ManifestName, LegacyManifestName })
+                {
+                    var file = Path.Combine(dir, name);
+                    if (File.Exists(file)) return Serialization.FromJson<InstallManifest>(File.ReadAllText(file));
+                }
+                return null;
             }
             catch
             {

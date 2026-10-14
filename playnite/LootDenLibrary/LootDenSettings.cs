@@ -3,9 +3,9 @@ using Playnite.SDK.Data;
 using System;
 using System.Collections.Generic;
 
-namespace GameManagerLibrary
+namespace LootDenLibrary
 {
-    public class GameManagerSettings : ObservableObject
+    public class LootDenSettings : ObservableObject
     {
         private string serverUrl = "";
         private string apiToken = "";
@@ -17,18 +17,18 @@ namespace GameManagerLibrary
         public string ApiToken { get => apiToken; set => SetValue(ref apiToken, value); }
     }
 
-    public class GameManagerSettingsViewModel : ObservableObject, ISettings
+    public class LootDenSettingsViewModel : ObservableObject, ISettings
     {
-        private readonly GameManagerLibrary plugin;
-        private GameManagerSettings editingClone;
-        private GameManagerSettings settings;
+        private readonly LootDenLibrary plugin;
+        private LootDenSettings editingClone;
+        private LootDenSettings settings;
 
-        public GameManagerSettings Settings { get => settings; set => SetValue(ref settings, value); }
+        public LootDenSettings Settings { get => settings; set => SetValue(ref settings, value); }
 
-        public GameManagerSettingsViewModel(GameManagerLibrary plugin)
+        public LootDenSettingsViewModel(LootDenLibrary plugin)
         {
             this.plugin = plugin;
-            Settings = plugin.LoadPluginSettings<GameManagerSettings>() ?? new GameManagerSettings();
+            Settings = plugin.LoadPluginSettings<LootDenSettings>() ?? new LootDenSettings();
         }
 
         public void BeginEdit() => editingClone = Serialization.GetClone(Settings);

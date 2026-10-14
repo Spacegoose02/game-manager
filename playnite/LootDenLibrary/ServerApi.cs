@@ -6,7 +6,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace GameManagerLibrary
+namespace LootDenLibrary
 {
     // Mirrors the JSON shapes in packages/shared/src/index.ts.
     public class ServerGame
@@ -43,9 +43,9 @@ namespace GameManagerLibrary
     public class ServerApi
     {
         private static readonly HttpClient http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-        private readonly GameManagerSettings settings;
+        private readonly LootDenSettings settings;
 
-        public ServerApi(GameManagerSettings settings)
+        public ServerApi(LootDenSettings settings)
         {
             this.settings = settings;
         }

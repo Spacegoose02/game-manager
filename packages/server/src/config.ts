@@ -60,7 +60,20 @@ function bool(value: string | undefined, fallback: boolean): boolean {
   return /^(1|true|yes|on)$/i.test(value);
 }
 
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
+/**
+ * Settings come from LOOTDEN_* variables. The GM_* names from before the rename still work;
+ * when both are set, LOOTDEN_* wins.
+ */
+export function withLegacyEnv(raw: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...raw };
+  for (const [key, value] of Object.entries(raw)) {
+    if (key.startsWith("LOOTDEN_") && value !== undefined) env[`GM_${key.slice("LOOTDEN_".length)}`] = value;
+  }
+  return env;
+}
+
+export function loadConfig(rawEnv: NodeJS.ProcessEnv = process.env): ServerConfig {
+  const env = withLegacyEnv(rawEnv);
   return {
     host: env.GM_HOST || "0.0.0.0",
     port: int(env.GM_PORT, 8080),

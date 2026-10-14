@@ -1,14 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { api, formatBytes, type ClientFile } from "../api";
 
+const OFFICIAL_REPO = "Spacegoose02/lootden";
+
 /** Admin side of the Get the app page: upload builds, or pull the latest GitHub release. */
 export function AdminApps({ onMessage }: { onMessage: (m: string) => void }) {
   const [files, setFiles] = useState<ClientFile[]>([]);
   const [repo, setRepo] = useState(() => {
     try {
-      return localStorage.getItem("gm-release-repo") ?? "";
+      // The project's own releases unless you've pointed it at a fork; the repository was
+      // called game-manager before the rename.
+      return (localStorage.getItem("gm-release-repo") ?? OFFICIAL_REPO).replace(/^Spacegoose02\/game-manager$/i, OFFICIAL_REPO);
     } catch {
-      return "";
+      return OFFICIAL_REPO;
     }
   });
   const [busy, setBusy] = useState("");
@@ -38,7 +42,7 @@ export function AdminApps({ onMessage }: { onMessage: (m: string) => void }) {
         there directly.
       </p>
       <div className="inline">
-        <input placeholder="GitHub repository, e.g. you/lootden" value={repo} onChange={(e) => setRepo(e.target.value)} style={{ flex: 1 }} />
+        <input placeholder={`GitHub repository, e.g. ${OFFICIAL_REPO}`} value={repo} onChange={(e) => setRepo(e.target.value)} style={{ flex: 1 }} />
         <button
           disabled={!!busy || !repo.trim()}
           onClick={() =>

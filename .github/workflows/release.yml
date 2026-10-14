@@ -28,6 +28,12 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=raw,value=latest
+      # Never publish an image that doesn't start: build it locally and run it first.
+      - uses: docker/build-push-action@v6
+        with:
+          load: true
+          tags: lootden-smoke
+      - run: sh scripts/docker-smoke.sh lootden-smoke
       - uses: docker/build-push-action@v6
         with:
           push: true

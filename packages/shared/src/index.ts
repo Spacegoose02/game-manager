@@ -134,7 +134,7 @@ export interface User {
   displayName: string;
   email: string | null;
   role: Role;
-  /** Seed for the generated gaming avatar; GET /api/avatars/<seed>.svg */
+  /** Seed for the generated raccoon avatar; GET /api/avatars/<seed>.svg */
   avatar: string;
   /** Kid profiles only see games known to be kid-safe. */
   kidMode: boolean;

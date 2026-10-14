@@ -18,6 +18,14 @@ jobs:
       - run: npm test
       - run: npm run build -w @lootden/desktop
 
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t lootden-smoke .
+      # Starts it as root and as Unraid's 99:100 and waits for /api/health.
+      - run: sh scripts/docker-smoke.sh lootden-smoke
+
   playnite:
     runs-on: windows-latest
     steps:

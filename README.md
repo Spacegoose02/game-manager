@@ -2,206 +2,127 @@
 
 # LootDen
 
-A raccoon's den for your loot: a self-hosted manager for your own DRM-free PC game library.
-The server runs in Docker (made for Unraid), and players install games from a Windows or
-Linux desktop app that downloads, unpacks zip / 7z / rar and deletes the archives afterwards.
+> **Built with AI assistance.** LootDen was written with a lot of help from an AI assistant
+> (Anthropic's Claude), directed and reviewed by its maintainer. It has an automated test
+> suite and runs on the maintainer's own Unraid server, but it hasn't had an independent
+> security review, and parts of it (the Windows installer flow, emulators, some download
+> clients) have had little real-world testing. Read the code and the settings before you
+> trust it with anything important. Don't expose it to the internet without a reverse
+> proxy, HTTPS and sign-in in front of it.
 
-LootDen was called Game Manager until v0.3. Existing installs keep working: the server
-still uses an existing `game-manager.db`, the desktop app keeps its settings, the
-`gamemanager://` links still open the app, and the `GM_` environment variables are unchanged.
+**A raccoon's den for your loot.** LootDen is a self-hosted library for the PC games you
+already own. Put your DRM-free installers and game folders on a home server; LootDen
+catalogues them with covers and details, and anyone in your household can install them
+on their own PC with one click, like a small private Steam.
 
-- **Server**: scans and watches your games folder, fetches covers and details from IGDB,
-  RAWG, Steam, PCGamingWiki and SteamGridDB, and serves a web UI with a featured home page,
-  filters (genre, controller support, kid-safe), gaming news, YouTube video rows, a release
-  calendar, a Discover page for games you don't have yet, and 23 themes. Admins can replace
-  any cover or background with their own image.
-- **Save sync**: each profile backs up its saves per game to the server (automatically when
-  you close a game in the app) and restores them on another PC.
-- **Profiles**: local accounts or sign-in with TinyAuth / any OIDC provider, random gaming
-  avatars, kid profiles that only see kid-safe games, and per-profile install and play-time
-  tracking (exportable to Yamtrack).
-- **Desktop app**: Windows exe and Linux AppImage/deb, downloadable from the server's
-  **Get the app** page. Pick a drive, install, play, uninstall.
-  Touch mode and controller navigation for handhelds like the ROG Ally.
-- **Downloads** (admin): search Prowlarr indexers and send results to qBittorrent or SABnzbd;
-  finished downloads are cleaned up (junk files removed, nested archives unpacked) and
-  imported as `Title v1.2.zip`. Disc images and installers are installed once with the app,
-  and the installed game is zipped back onto the server.
-- **Playnite plugin**: your library inside Playnite, with installs handed to the desktop app.
+- **Who it's for:** people with a pile of GOG, itch.io, Humble or other DRM-free games
+  on a NAS or Unraid box, who want a nice way for the family to browse and install them.
+- **What it isn't:** a store, a launcher for Steam/Epic games, or a way to get games you
+  don't own. See [Using LootDen responsibly](#using-lootden-responsibly).
 
-See [ROADMAP.md](ROADMAP.md) for what is done and what is next.
+<!-- Screenshots: add images to docs/screenshots/ and link them here.
+![Home](docs/screenshots/home.png)
+![Game page](docs/screenshots/game.png)
+![Desktop app](docs/screenshots/desktop.png)
+-->
 
-## Library layout
+## Features
 
-Each top-level entry in the games folder is one game:
+- **Library server** (Docker, made for Unraid): scans and watches your games folder, finds
+  covers, descriptions, genres, age ratings and controller support (IGDB, RAWG, Steam,
+  PCGamingWiki, SteamGridDB), and serves a web UI with a home page, filters, a release
+  calendar, news, videos, Discover, and 23 themes.
+- **Desktop app** for Windows and Linux: pick a drive, press Install. It downloads (with
+  resume), unpacks zip / 7z / rar, deletes the archives, and tracks play time. Installers
+  and disc images get a **Run installer** button, and an admin can upload the installed
+  game so everyone after them gets a ready-to-play download.
+- **Profiles:** local accounts or single sign-on (OIDC, TinyAuth, forward auth), random
+  raccoon avatars, kid profiles that only see kid-safe games, a backlog and journal per
+  game, and per-profile play time.
+- **Save sync:** saves are backed up to the server when you close a game and restored on
+  another PC.
+- **Emulation:** console games in their own section, with emulators set up by the desktop
+  app and many systems playable in the browser.
+- **Optional download tools** for admins: Prowlarr search, qBittorrent / Transmission /
+  Deluge / SABnzbd hand-off, import clean-up, a wanted list, virus scanning and alerts.
+- **Release sources:** a small plugin layer for feeds that list new games (GOG, itch.io,
+  RSS, or your own), shown on Discover and used for wishlist alerts.
+- **Playnite plugin** and a **command-line client** (`lootden`) for scripting.
 
-```
-/mnt/user/games/
-  The Sims 4/                    <- a folder: every file inside is part of the game
-    The.Sims.4.part1.rar
-    The.Sims.4.part2.rar
-  Grand Theft Auto V.7z          <- a single archive at the root is a game too
-  Stardew Valley/
-    Stardew Valley.exe
-    ...
-```
-
-Archives (including split sets like `.part1.rar`, `.7z.001`, `.r00`) are unpacked on the
-player's PC after download, then removed. Loose files are copied as they are.
-
-### Console games (Emulation)
-
-Console games go in an `Emulation` folder (or `roms`), one folder per system. Every file or
-folder inside a system's folder is one game, and they show up in the **Emulation** section
-instead of the PC library:
-
-```
-/mnt/user/games/Emulation/
-  ps1/Crash Bandicoot (USA)/Crash Bandicoot (USA).cue + .bin
-  ps2/Okami (USA).iso
-  ps3/Demon's Souls/PS3_GAME/USRDIR/EBOOT.BIN
-  xbox/Halo (USA).iso
-  snes/Super Mario World (USA).sfc
-```
-
-System folders: `ps1` (or `psx`), `ps2`, `ps3`, `xbox`, `psp`, `nes`, `snes`, `n64`, `gb`,
-`gbc`, `gba`, `nds`, `gamecube`, `wii`, `genesis` (or `megadrive`), `saturn`, `dreamcast`.
-Metadata is matched on that system only.
-
-- **Desktop app:** Emulation, then Emulators and BIOS sets up RetroArch, DuckStation, PCSX2,
-  RPCS3 and xemu from their official releases (RetroArch cores come from the libretro
-  buildbot). BIOS files come from your own consoles: pick them on the PC, or upload them once
-  on that page (admins) and press "Get BIOS files from the server" on each PC. PS3 firmware
-  links to Sony's download page. **Play** starts the right emulator, tracks play time and
-  syncs saves per profile: newer saves come down before you play, changed ones go up after.
-- **Browser:** single-file games (cartridge ROMs, CHD, PBP, ISO, single-track BIN) for NES,
-  SNES, N64, Game Boy, GBA, DS, Genesis, Saturn, PS1 and PSP play in the browser with
-  EmulatorJS. The in-game save (battery save or PS1 memory card) is the same one the desktop
-  app uses, so you can switch between the two. Set `GM_EMULATORJS_DATA` to a self-hosted copy
-  of EmulatorJS's `data/` folder to play without its CDN.
-- **Downloads:** "Send to" on the search results puts a finished download straight into a
-  system's folder.
-
-## Run the server
-
-Docker Compose:
+## Quick start (Docker)
 
 ```sh
-cp .env.example .env      # set paths, and optionally the first admin and IGDB keys
-docker compose up -d --build
+git clone https://github.com/Spacegoose02/lootden.git
+cd lootden
+cp .env.example .env        # set GAMES_PATH and APPDATA_PATH at least
+docker compose up -d        # or: docker compose up -d --build to build it yourself
 ```
 
-Open `http://<server>:8080`. Without `GM_ADMIN_USERNAME`/`GM_ADMIN_PASSWORD` in `.env`,
-the first visit asks you to create the admin account.
+Open `http://<your-server>:8080`. The first visit asks you to create the admin account
+(or set `LOOTDEN_ADMIN_USERNAME` and `LOOTDEN_ADMIN_PASSWORD` in `.env`).
 
-On Unraid, see [docs/UNRAID.md](docs/UNRAID.md).
-
-### Settings
-
-All settings are environment variables; [.env.example](.env.example) lists them with comments.
-The important ones:
-
-| Variable | What it does |
-| --- | --- |
-| `GM_ADMIN_USERNAME`, `GM_ADMIN_PASSWORD` | Creates this admin at first startup (ignored once any account exists) |
-| `GM_PUBLIC_URL` | The address people use, e.g. `https://games.example.com`; needed for OIDC |
-| `GM_IGDB_CLIENT_ID`, `GM_IGDB_CLIENT_SECRET` | Twitch app keys for IGDB (free at dev.twitch.tv). Without them, Steam and PCGamingWiki are used |
-| `GM_RAWG_API_KEY`, `GM_STEAMGRIDDB_API_KEY` | Optional RAWG metadata and SteamGridDB artwork (both free) |
-| `GM_METADATA_AUTO` | Match new games automatically (default `true`) |
-| `GM_WATCH`, `GM_SCAN_INTERVAL_MINUTES` | Folder watching (default on) and the backup rescan interval (default 30) |
-| `GM_OIDC_ISSUER`, `GM_OIDC_CLIENT_ID`, `GM_OIDC_CLIENT_SECRET` | Sign in with TinyAuth or another OIDC provider |
-| `GM_OIDC_NAME`, `GM_OIDC_ADMIN_GROUP`, `GM_OIDC_AUTO_CREATE` | Button label, group that makes someone admin, create profiles on first login |
-| `GM_AUTH_HEADER_USER`, `GM_TRUSTED_PROXIES`, `GM_AUTH_HEADER_ADMIN_GROUP` | Trust forward-auth headers (e.g. `Remote-User`) from these proxy addresses |
-| `GM_API_TOKEN` | Optional admin token for scripts |
-| `GM_EMULATORJS_DATA` | Where the browser emulator loads from (default: the EmulatorJS CDN) |
-
-You don't need environment variables for keys or sign-in. Everything an admin can change lives
-under **Settings**, in seven sections:
-
-- **Library**: rescan, metadata look-ups and profiles.
-- **Steam & wishlist**: your SteamID64 (or profile link) with **Save ID** and an **Auto-Sync
-  Wishlist** switch, plus RSS/Atom list feeds. The Steam wishlist must be public.
-- **Downloads**: Prowlarr, a torrent client (qBittorrent, Transmission or Deluge), SABnzbd, and
-  importing (copy or move, clean-up, the downloads folder, path mappings).
-- **Wanted & rules**: automatic Prowlarr searches for watched wishlist games, optional
-  auto-grab, and release rules (must / must not contain, preferred words, size, seeders,
-  blocked indexers) used by every search.
-- **Scanning & alerts**: ClamAV (a clamd container or clamscan) and an optional VirusTotal key;
-  flagged imports are held for review on the Downloads page. Alerts show under the bell and
-  can go out through an Apprise server.
-- **Sign-in & services**: public address, TinyAuth/OIDC, IGDB/RAWG/SteamGridDB keys, and the
-  itch.io and NexusMods keys.
-- **News & apps**: news feeds, YouTube rows and desktop app builds.
-
-Values there win over the environment.
-
-Game pages show a personal journal (status, rating, notes, dated entries) with Time to Beat
-from IGDB, an "Update available" line when GOG, itch.io or Steam has a newer version than your
-copy, and trending NexusMods mods. **Library** has a **Backlog** tab with "Pick something for
-me" and a **Stats** tab.
-
-### Your own logos
-
-Put your files in [brand/](brand/README.md) with the names listed there (logo, wordmark,
-favicon, app icon, Playnite icon). Anything you leave out keeps the built-in raccoon.
-
-## Install games (desktop app)
-
-Open **Get the app** in the web UI and download the app for your system, enter the server
-address, and sign in. Admins fill that page from **Settings, News & apps**: upload the files,
-or enter the GitHub repository and press **Get latest release**. (Files live in
-`/data/clients`, so copying them there works too.) On a game's page choose the drive and press **Install**. The app:
-
-1. downloads every file (interrupted downloads resume),
-2. unpacks zip, 7z and rar with 7-Zip, then deletes the archives,
-3. tells the server it's installed on this PC, and tracks play time.
-
-zip and 7z work out of the box. **RAR needs 7-Zip installed** (Windows: 7-zip.org;
-Linux: `7zz`/`p7zip-full` with RAR support), because the bundled 7-Zip can't read RAR.
-
-There is also a command-line client, `gm`, for scripting: `gm login`, `gm list`,
-`gm install <id> --dest D:\Games`, `gm play`, `gm uninstall`, `gm stats`.
-
-## Playnite
-
-See [playnite/README.md](playnite/README.md). Create a personal token on your profile page,
-paste it into the plugin settings, and the library appears in Playnite.
-
-## Yamtrack
-
-Yamtrack has no API for adding games, so the profile page has **Export for Yamtrack**,
-a CSV of the games you've installed and played (IGDB-matched where possible). Import it
-in Yamtrack under Settings, Import, Yamtrack CSV.
-
-## Develop
-
-Needs Node 22.
+Plain `docker run`:
 
 ```sh
-npm install
-npm test              # builds everything and runs the tests
-npm run dev:server    # API on :8080; set GM_GAMES_DIR and GM_DATA_DIR to local folders first
-npm run dev:web       # web UI on :5173 with hot reload, proxying /api to :8080
-npm run build:desktop # desktop app; then: npm run dist:win -w @lootden/desktop
+docker run -d --name lootden -p 8080:8080 \
+  -v /path/to/appdata/lootden:/data \
+  -v /path/to/games:/games \
+  ghcr.io/spacegoose02/lootden:latest
 ```
 
-| Folder | What's in it |
+**On Unraid**, follow [docs/UNRAID.md](docs/UNRAID.md).
+
+Then put your games in the games folder, **one folder or archive per game**:
+
+```
+/games/
+  Stardew Valley/          <- a folder: everything inside is the game
+  Hades.zip                <- a single archive is a game too
+  Celeste/setup_celeste.exe + setup_celeste-1.bin   <- an installer, set up once in the app
+```
+
+More on layouts, consoles and installers: [docs/LIBRARY.md](docs/LIBRARY.md).
+
+## Install games on your PC
+
+1. In the web UI, open **Get the app** and download the desktop app for your system.
+2. Start it, enter your server's address, and sign in.
+3. Open a game and press **Install**.
+
+RAR archives need a full 7-Zip installed (zip and 7z work out of the box). Details,
+the command-line client and the Playnite plugin: [docs/CLIENTS.md](docs/CLIENTS.md).
+
+## Documentation
+
+| Guide | What's in it |
 | --- | --- |
-| `packages/shared` | Types and archive helpers used by everything |
-| `packages/server` | Fastify API, SQLite, scanner, metadata, auth, download connectors |
-| `packages/web` | React web UI (also what the desktop app shows) |
-| `packages/client` | Install engine and the `gm` command-line client |
-| `packages/desktop` | Electron desktop app |
-| `playnite` | Playnite library plugin (C#) |
+| [docs/README.md](docs/README.md) | Start here: an overview of all the docs |
+| [docs/UNRAID.md](docs/UNRAID.md) | Running on Unraid, permissions, download clients |
+| [docs/LIBRARY.md](docs/LIBRARY.md) | How to lay out games, consoles, installers and disc images |
+| [docs/CLIENTS.md](docs/CLIENTS.md) | Desktop app, `lootden` CLI, Playnite, Yamtrack |
+| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Every environment variable and every Settings section |
+| [docs/UPGRADING.md](docs/UPGRADING.md) | Backups, upgrades, and the rename from Game Manager |
+| [docs/FAQ.md](docs/FAQ.md) | Common questions and fixes |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the pieces fit together |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Building, testing and sending changes |
+| [ROADMAP.md](ROADMAP.md) | What's done and what's next |
 
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains how the pieces fit together.
+## Using LootDen responsibly
 
-## Releases
+LootDen manages files you put on your own server. You're responsible for only adding
+games you own or otherwise have the right to use, and for following each game's licence
+(many DRM-free licences allow copies for your own household; check yours). The optional
+download features talk to indexers and download clients **you** configure; LootDen doesn't
+include or recommend any source of games. If you expose it outside your home network,
+protect it with HTTPS and sign-in.
 
-Push a tag like `v0.2.0`. GitHub Actions then publishes the Docker image to
-`ghcr.io/<you>/lootden` and attaches the Windows/Linux desktop apps, the `gm`
-binaries and the Playnite plugin to a GitHub release.
+## Project status
+
+LootDen is a hobby project under active development (see the [changelog of
+releases](https://github.com/Spacegoose02/lootden/releases)). Expect rough edges, and back
+up your `appdata` folder before upgrading. Bug reports and pull requests are welcome.
 
 ## License
 
-See [LICENSE](LICENSE) (pick a license before publishing).
+No licence has been chosen yet; see [LICENSE](LICENSE). Until one is added, all rights
+are reserved by the author.

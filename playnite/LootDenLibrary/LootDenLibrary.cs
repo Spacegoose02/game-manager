@@ -8,12 +8,12 @@ using System.IO;
 using System.Linq;
 using System.Windows.Controls;
 
-namespace GameManagerLibrary
+namespace LootDenLibrary
 {
-    public class GameManagerLibrary : LibraryPlugin
+    public class LootDenLibrary : LibraryPlugin
     {
         private static readonly ILogger logger = LogManager.GetLogger();
-        private GameManagerSettingsViewModel settings;
+        private LootDenSettingsViewModel settings;
 
         public override Guid Id { get; } = Guid.Parse("cb17f98c-8f44-4e3a-8804-b3d7df8ca427");
         public override string Name => "LootDen";
@@ -21,9 +21,9 @@ namespace GameManagerLibrary
 
         private ServerApi Api => new ServerApi(settings.Settings);
 
-        public GameManagerLibrary(IPlayniteAPI api) : base(api)
+        public LootDenLibrary(IPlayniteAPI api) : base(api)
         {
-            settings = new GameManagerSettingsViewModel(this);
+            settings = new LootDenSettingsViewModel(this);
             Properties = new LibraryPluginProperties { HasSettings = true, CanShutdownClient = false };
         }
 
@@ -60,12 +60,12 @@ namespace GameManagerLibrary
 
         public override IEnumerable<InstallController> GetInstallActions(GetInstallActionsArgs args)
         {
-            if (args.Game.PluginId == Id) yield return new GameManagerInstallController(args.Game, Api);
+            if (args.Game.PluginId == Id) yield return new LootDenInstallController(args.Game, Api);
         }
 
         public override IEnumerable<UninstallController> GetUninstallActions(GetUninstallActionsArgs args)
         {
-            if (args.Game.PluginId == Id) yield return new GameManagerUninstallController(args.Game, Api);
+            if (args.Game.PluginId == Id) yield return new LootDenUninstallController(args.Game, Api);
         }
 
         public override IEnumerable<PlayController> GetPlayActions(GetPlayActionsArgs args)
@@ -103,6 +103,6 @@ namespace GameManagerLibrary
 
         public override ISettings GetSettings(bool firstRunSettings) => settings;
 
-        public override UserControl GetSettingsView(bool firstRunSettings) => new GameManagerSettingsView { DataContext = settings };
+        public override UserControl GetSettingsView(bool firstRunSettings) => new LootDenSettingsView { DataContext = settings };
     }
 }
