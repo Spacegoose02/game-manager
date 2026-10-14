@@ -30,4 +30,4 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - run: dotnet build playnite/GameManagerLibrary -c Release
+      - run: dotnet build playnite/LootDenLibrary -c Release

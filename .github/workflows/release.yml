@@ -78,7 +78,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - run: dotnet build playnite/GameManagerLibrary -c Release -o playnite-out
+      - run: dotnet build playnite/LootDenLibrary -c Release -o playnite-out
       - run: Compress-Archive -Path playnite-out/* -DestinationPath LootDen-playnite.zip
       - uses: actions/upload-artifact@v4
         with:
