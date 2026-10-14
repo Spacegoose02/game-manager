@@ -33,14 +33,27 @@ interface XrelLatestResponse {
   list?: XrelRelease[];
 }
 
+// Helper to sanitize the scene directory name if a clean title isn't available
+function cleanSceneName(rawName: string): string {
+  return rawName
+    .replace(/-[A-Za-z0-9_]+$/, "") // Remove release group
+    .replace(/[_.]?(DLC|Unlocker|NSW|SWITCH|MULTI\d*|v\d+(\.\d+)*)[_.]?/gi, " ") // Remove tags
+    .replace(/[._]/g, " ") // Replace dots and underscores
+    .replace(/\s+/g, " ") // Collapse multiple spaces
+    .trim();
+}
+
 function toRelease(item: XrelRelease, source: "scene" | "p2p"): ReleaseInfo | null {
   // Only process master_game entries
   if (item.ext_info?.type !== "master_game") {
     return null;
   }
 
-  const title = item.dirname?.trim();
-  if (!title) return null;
+  const rawDirname = item.dirname?.trim();
+  if (!rawDirname) return null;
+
+  // Use xREL's clean game title if available, otherwise sanitize the dirname
+  const displayTitle = item.ext_info?.title?.trim() || cleanSceneName(rawDirname);
 
   const isP2p = source === "p2p";
   const timestamp = (isP2p ? item.pub_time : item.time) ?? Math.floor(Date.now() / 1000);
@@ -57,6 +70,7 @@ function toRelease(item: XrelRelease, source: "scene" | "p2p"): ReleaseInfo | nu
 
   const details: Record<string, string> = {
     Source: source,
+    ReleaseName: rawDirname, // Preserve exact folder name
   };
   if (groupName) details["Group"] = groupName;
   if (sizeMb) details["SizeMB"] = String(sizeMb);
@@ -64,12 +78,12 @@ function toRelease(item: XrelRelease, source: "scene" | "p2p"): ReleaseInfo | nu
 
   return {
     id: `xrel:${source}:${item.id}`,
-    title,
+    title: displayTitle, // Search engine now uses the clean title
     date: isoDate(dateStr),
     platform: "pc",
     url: item.link_href ?? null,
     image: null,
-    summary: item.ext_info?.title ? `Game: ${item.ext_info.title}` : null,
+    summary: rawDirname, // Shows the scene string in the UI summary
     details,
   };
 }

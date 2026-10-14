@@ -15,6 +15,10 @@ export interface InstalledGame {
   executable?: string;
   /** Missing in apps older than emulation support. */
   platform?: string;
+  /** The download is still a disc image or installer (missing in older apps). */
+  needsSetup?: "disc" | "installer" | null;
+  /** Where the installer put the game, once it has been run. */
+  installedDir?: string;
 }
 
 export interface EmulatorSetup {
@@ -53,6 +57,12 @@ export interface DesktopBridge {
   /** Disc/installer games: install once on this PC and upload the result. Missing in older apps. */
   prepare?(gameId: string): Promise<GameDetailLike | null>;
   uploadFolder?(gameId: string): Promise<GameDetailLike | null>;
+  /** Copies already on this PC, so nothing is downloaded twice. Missing in older apps. */
+  locate?(gameId: string): Promise<{ installed: InstalledGame | null; relinked: boolean; loose: string[] }>;
+  adopt?(gameId: string, dir: string): Promise<InstalledGame>;
+  /** Downloaded installers: run the setup on this PC, and (admins) upload the installed game. */
+  runSetup?(gameId: string): Promise<{ installedDir: string; executable?: string } | null>;
+  uploadInstalled?(gameId: string): Promise<GameDetailLike | null>;
   /** Missing in desktop apps older than save sync. */
   backupSaves?(gameId: string): Promise<{ backupId: number; size: number } | { error: string }>;
   restoreSaves?(gameId: string, saveId: number): Promise<{ previous: string | null } | null>;
@@ -77,10 +87,20 @@ export const bridgeError = (e: unknown) => String((e as Error)?.message ?? e).re
 /** Live install/play state for one game in the desktop app. */
 export function useDesktopGame(gameId: string) {
   const [installed, setInstalled] = useState<InstalledGame | null>(null);
+  const [loose, setLoose] = useState<string[]>([]);
   const [progress, setProgress] = useState<Progress | null>(null);
 
+  /** Also finds this game installed under an old id or title, and copies made by hand. */
   const refresh = async () => {
     if (!desktop) return;
+    if (desktop.locate) {
+      const found = await desktop.locate(gameId).catch(() => null);
+      if (found) {
+        setInstalled(found.installed);
+        setLoose(found.loose);
+        return;
+      }
+    }
     setInstalled((await desktop.installed()).find((g) => g.gameId === gameId) ?? null);
   };
 
@@ -90,10 +110,10 @@ export function useDesktopGame(gameId: string) {
     return desktop.onProgress((p) => {
       if (p.gameId !== gameId) return;
       setProgress(p);
-      if (p.type === "done" || p.type === "stopped") void refresh();
+      if (p.type === "done" || p.type === "stopped" || (p.type === "prepare" && p.done)) void refresh();
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId]);
 
-  return { installed, progress, refresh, setProgress };
+  return { installed, loose, progress, refresh, setProgress };
 }

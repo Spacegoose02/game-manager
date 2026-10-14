@@ -5,6 +5,7 @@ import { groupArchiveSets, safeFolderName, type GameDetail, type GameSummary } f
 import type { GameServerClient } from "./api.js";
 import { downloadFile } from "./downloader.js";
 import { extractArchive, findSevenZip } from "./extractor.js";
+import { detectSetup } from "./installed.js";
 
 export const MANIFEST_NAME = ".game-manager.json";
 
@@ -114,10 +115,12 @@ export async function installGame(api: GameServerClient, gameId: string, opts: I
   }
   if (archivePaths.length > 0 && !opts.keepArchives) await hoistSingleFolder(gameDir);
 
+  // An installer inside an archive only shows once it's unpacked, so check the files we ended up with too.
+  const needsSetup = game.platform === "pc" ? (game.needsSetup ?? (await detectSetup(gameDir))) : null;
   await writeFile(
     path.join(gameDir, MANIFEST_NAME),
     JSON.stringify(
-      { gameId: game.id, title: game.title, source: game.source, platform: game.platform, serverModifiedAt: game.modifiedAt, installedAt: new Date().toISOString() },
+      { gameId: game.id, title: game.title, source: game.source, platform: game.platform, needsSetup, serverModifiedAt: game.modifiedAt, installedAt: new Date().toISOString() },
       null,
       2,
     ) + "\n",

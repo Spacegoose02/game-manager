@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { EMULATORS, platformFor, type GameDetail } from "@lootden/shared";
 import { formatBytes } from "../api";
+import { useAuth } from "../auth";
 import { bridgeError, desktop, useDesktopGame, type Drive } from "../desktop";
 
 /** Install / play / uninstall panel shown inside the desktop app. */
 export function DesktopInstall({ game, autoFocus }: { game: GameDetail; autoFocus: boolean }) {
-  const { installed, progress, refresh, setProgress } = useDesktopGame(game.id);
+  const { installed, loose, progress, refresh, setProgress } = useDesktopGame(game.id);
+  const { me } = useAuth();
+  const navigate = useNavigate();
   const [drives, setDrives] = useState<Drive[]>([]);
   const [target, setTarget] = useState("");
   const [error, setError] = useState("");
@@ -23,6 +27,10 @@ export function DesktopInstall({ game, autoFocus }: { game: GameDetail; autoFocu
   useEffect(() => {
     if (autoFocus) button.current?.focus();
   }, [autoFocus, installed]);
+  // After uploading an installed copy the game has a new id on the server.
+  useEffect(() => {
+    if (progress?.type === "prepare" && progress.done && progress.newId && progress.newId !== game.id) navigate(`/games/${progress.newId}`, { replace: true });
+  }, [progress, game.id, navigate]);
 
   if (!desktop) return null;
   const bridge = desktop;
@@ -48,7 +56,39 @@ export function DesktopInstall({ game, autoFocus }: { game: GameDetail; autoFocu
   const downloading = busy && p?.type === "download";
   const pct = downloading ? (p.received / Math.max(1, p.total)) * 100 : 0;
 
+  const setupMessage = p?.type === "prepare" ? p : null;
+
+  // Downloaded, but it's still the installer: run it once here before anything can be played.
+  if (installed && installed.needsSetup && !installed.installedDir && (installed.platform ?? "pc") === "pc") {
+    const what = installed.needsSetup === "disc" ? "a disc image" : "the game's installer";
+    return (
+      <div className="install panel">
+        <div className="inline">
+          {bridge.runSetup ? (
+            <button ref={button} className="primary" disabled={busy} onClick={() => run(() => bridge.runSetup!(game.id))}>
+              {busy ? "Installing…" : "Run installer"}
+            </button>
+          ) : null}
+          <button className="secondary" onClick={() => run(() => bridge.openFolder(game.id))}>
+            Open folder
+          </button>
+          <button className="ghost" onClick={() => run(() => bridge.uninstall(game.id))}>
+            Uninstall
+          </button>
+        </div>
+        <p className="muted small">
+          This download is {what}, not the game yet. {bridge.runSetup ? "Run installer sets it up in an Installed folder inside" : "Update the app to run it from here, or run setup.exe yourself in"} <code>{installed.dir}</code>
+          {bridge.runSetup ? ", then Play starts the game." : "."}
+        </p>
+        {setupMessage && <p className={setupMessage.error ? "error small" : "notice small"}>{setupMessage.message}</p>}
+        {error && <p className="error small">{error}</p>}
+      </div>
+    );
+  }
+
   if (installed) {
+    // An admin who just ran an installer can put the installed game on the server for everyone.
+    const canUpload = me?.role === "admin" && !!game.needsSetup && !!installed.installedDir && !!bridge.uploadInstalled;
     return (
       <div className="install panel">
         <div className="inline">
@@ -62,8 +102,17 @@ export function DesktopInstall({ game, autoFocus }: { game: GameDetail; autoFocu
             Uninstall
           </button>
         </div>
+        {canUpload && (
+          <p className="notice small">
+            <button className="small" disabled={busy} onClick={() => run(() => bridge.uploadInstalled!(game.id))}>
+              Upload installed game
+            </button>{" "}
+            The server still has the installer. Uploading this installed copy means everyone after you gets a ready-to-play download.
+          </p>
+        )}
+        {setupMessage && <p className={setupMessage.error ? "error small" : "muted small"}>{setupMessage.message}</p>}
         <p className="muted small">
-          Installed in <code>{installed.dir}</code>
+          Installed in <code>{installed.installedDir ?? installed.dir}</code>
           {p?.type === "stopped" ? ` · last session ${Math.round(p.seconds / 60)} min` : ""}
         </p>
         {error && <p className="error small">{error}</p>}
@@ -73,6 +122,15 @@ export function DesktopInstall({ game, autoFocus }: { game: GameDetail; autoFocu
 
   return (
     <div className="install panel">
+      {loose.length > 0 && bridge.adopt && (
+        <p className="notice small">
+          Found a copy at <code>{loose[0]}</code>.{" "}
+          <button className="small" disabled={busy} onClick={() => run(() => bridge.adopt!(game.id, loose[0]!))}>
+            Use this copy
+          </button>{" "}
+          Installing instead downloads into that folder, reusing any files that are already complete.
+        </p>
+      )}
       <div className="inline">
         <select value={target} onChange={(e) => setTarget(e.target.value)} aria-label="Install location" disabled={busy}>
           {[...new Set([target, ...drives.map((d) => (d.path.endsWith("\\") ? `${d.path}Games` : `${d.path.replace(/\/$/, "")}/Games`))])]
@@ -104,7 +162,7 @@ export function DesktopInstall({ game, autoFocus }: { game: GameDetail; autoFocu
             })
           }
         >
-          {busy ? "Installing…" : `Install (${formatBytes(game.sizeBytes)})`}
+          {busy ? "Installing…" : game.needsSetup ? `Download installer (${formatBytes(game.sizeBytes)})` : `Install (${formatBytes(game.sizeBytes)})`}
         </button>
         {busy && (
           <button className="ghost" onClick={() => bridge.cancel(game.id)}>

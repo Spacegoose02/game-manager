@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
-import { MANIFEST_NAME } from "./installer.js";
+import { saveManifest } from "./installed.js";
 
 /** Installers, redistributables and tools that are never the game itself. */
 const NOT_THE_GAME =
@@ -55,10 +55,7 @@ export async function findExecutable(dir: string, title: string, platform: NodeJ
 
 /** Remembers the chosen executable in the install manifest. */
 export async function saveExecutable(dir: string, rel: string): Promise<void> {
-  const file = path.join(dir, MANIFEST_NAME);
-  const m = JSON.parse(await readFile(file, "utf8"));
-  m.executable = rel;
-  await writeFile(file, JSON.stringify(m, null, 2) + "\n");
+  await saveManifest(dir, { executable: rel });
 }
 
 /**
@@ -66,7 +63,8 @@ export async function saveExecutable(dir: string, rel: string): Promise<void> {
  * Windows .exe files on Linux run through wine when it is installed.
  */
 export function launchAndTrack(dir: string, rel: string, platform: NodeJS.Platform = process.platform): Promise<number> {
-  const full = path.join(dir, rel);
+  // Absolute when the installer put the game somewhere else.
+  const full = path.resolve(dir, rel);
   let cmd = full;
   let args: string[] = [];
   if (platform !== "win32" && /\.exe$/i.test(rel)) {

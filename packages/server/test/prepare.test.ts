@@ -25,6 +25,21 @@ describe("disc and installer games", () => {
     assert.equal(setupKindOf([{ path: "bin/game.exe" }, { path: "data/a.pak" }, { path: "readme.txt" }]), null);
   });
 
+  it("spots repacks, GOG offline installers, MSIs and other disc formats, but not installed games", () => {
+    const repack = ["setup.exe", "fg-01.bin", "fg-02.bin", "fg-optional-bonus-content.bin", "Verify BIN files before installation.bat", "MD5/fitgirl-bins.md5", ".game-manager.json"];
+    assert.equal(setupKindOf(repack.map((path) => ({ path }))), "installer");
+    assert.equal(setupKindOf([{ path: "setup_occupy_mars_1.0.exe" }, { path: "setup_occupy_mars_1.0-1.bin" }, { path: "setup_occupy_mars_1.0-2.bin" }]), "installer");
+    assert.equal(setupKindOf([{ path: "Game Installer.msi" }, { path: "readme.txt" }]), "installer");
+    assert.equal(setupKindOf([{ path: "Disc/setup.exe" }, { path: "Disc/data1.cab" }, { path: "Disc/data1.hdr" }]), "installer");
+    assert.equal(setupKindOf([{ path: "game.mdf" }, { path: "game.mds" }]), "disc");
+    assert.equal(setupKindOf([{ path: "game.cue" }, { path: "game.bin" }]), "disc");
+    // Installed games: their own executable beside an uninstaller or a settings program.
+    assert.equal(setupKindOf([{ path: "OccupyMars.exe" }, { path: "unins000.exe" }, { path: "unins000.dat" }]), null);
+    assert.equal(setupKindOf([{ path: "Game.exe" }, { path: "Setup.exe" }, { path: "data.pak" }]), null);
+    assert.equal(setupKindOf([{ path: "Game.exe" }, { path: "_CommonRedist/vcredist/setup.exe" }]), null);
+    assert.equal(setupKindOf([{ path: "game.exe" }, { path: "resources.bin" }]), null);
+  });
+
   it("replaces a disc game with the uploaded install and keeps its data", async () => {
     const { app, ctx } = await makeApp(root, { apiToken: "svc" });
     const headers = { authorization: "Bearer svc" };

@@ -1,11 +1,15 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { rm } from "node:fs/promises";
+import { readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, session, shell, type IpcMainInvokeEvent } from "electron";
 import {
   addBiosFile,
+  adoptFolder,
+  findCopies,
+  runLocalSetup,
+  saveManifest,
   biosFromServer,
   emulatorInfo,
   emulatorOverview,
@@ -126,10 +130,45 @@ async function client(): Promise<GameServerClient> {
   return new GameServerClient({ serverUrl: s.serverUrl, apiToken: token });
 }
 
+/** Every folder installs might be in: the ones used so far, plus a Games folder on each drive. */
+async function searchDirs(): Promise<string[]> {
+  const drives = await listDrives().catch(() => []);
+  const guesses = drives.map((d) => path.join(d.path, "Games")).filter((d) => existsSync(d));
+  return [...new Set([...settings.get().libraryDirs, ...guesses])];
+}
+
+/** The game on the server, in the shape findCopies needs. */
+async function gameRef(gameId: string) {
+  const g = await (await client()).getGame(gameId);
+  return { id: g.id, title: g.title, source: g.source, platform: g.platform };
+}
+
+/** Asks where the installer put the game, suggesting the folder we asked it to use. */
+async function askInstalledFolder(suggested: string, action: string): Promise<string | null> {
+  const { response } = await dialog.showMessageBox(win!, {
+    type: "question",
+    buttons: [action, "Choose another folder", "Cancel"],
+    defaultId: 0,
+    cancelId: 2,
+    message: "Is the game installed?",
+    detail: `We asked the installer to use:\n${suggested}\n\nIf you picked a different folder in the installer, choose it instead. Start the game once first if it needs to finish setting up.`,
+  });
+  if (response === 2) return null;
+  if (response === 0) return suggested;
+  const r = await dialog.showOpenDialog(win!, { title: "Folder the game was installed to", properties: ["openDirectory"] });
+  return r.canceled ? null : r.filePaths[0]!;
+}
+
 async function findInstalled(gameId: string) {
-  const game = (await listInstalled(settings.get().libraryDirs)).find((g) => g.gameId === gameId);
+  const game = (await listInstalled(await searchDirs())).find((g) => g.gameId === gameId);
   if (!game) throw new Error("That game is not installed on this computer");
   return game;
+}
+
+/** A path relative to dir when it's inside it, otherwise absolute (games installed elsewhere). */
+function relTo(dir: string, file: string): string {
+  const rel = path.relative(dir, file);
+  return rel.startsWith("..") || path.isAbsolute(rel) ? path.resolve(file) : rel;
 }
 
 function send(payload: object): void {
@@ -165,14 +204,39 @@ function registerIpc(): void {
     fromServer(e);
     return settings.update({ installDir: dir }).installDir;
   });
-  ipcMain.handle("gm:installed", (e) => {
+  ipcMain.handle("gm:installed", async (e) => {
     fromServer(e);
-    return listInstalled(settings.get().libraryDirs);
+    return listInstalled(await searchDirs());
+  });
+
+  /**
+   * Copies of a game already on this computer: an install of it (relinked when the server
+   * gave it a new id), or folders named after it with no manifest, to use instead of downloading.
+   */
+  ipcMain.handle("gm:locate", async (e, gameId: string) => {
+    fromServer(e);
+    return findCopies(await searchDirs(), await gameRef(gameId));
+  });
+
+  ipcMain.handle("gm:adopt", async (e, gameId: string, dir: string) => {
+    fromServer(e);
+    const ref = await gameRef(gameId);
+    // Only folders locate offered, never an arbitrary path from the page.
+    const { loose } = await findCopies(await searchDirs(), ref);
+    if (!loose.includes(dir)) throw new Error(`${dir} isn't a copy of ${ref.title} this app found`);
+    const game = await adoptFolder(dir, ref);
+    const root = path.dirname(dir);
+    const s = settings.get();
+    if (!s.libraryDirs.includes(root)) settings.update({ libraryDirs: [...s.libraryDirs, root] });
+    return game;
   });
 
   ipcMain.handle("gm:install", async (e, gameId: string, dir?: string) => {
     fromServer(e);
     if (running.has(gameId)) throw new Error("Already installing");
+    // Never download a second copy of something already on this computer.
+    const existing = await findCopies(await searchDirs(), await gameRef(gameId));
+    if (existing.installed) throw new Error(`Already installed in ${existing.installed.dir}`);
     const s = settings.get();
     const installDir = dir || s.installDir;
     if (dir) settings.update({ libraryDirs: [...new Set([...s.libraryDirs, dir])] });
@@ -213,11 +277,13 @@ function registerIpc(): void {
     fromServer(e);
     const game = await findInstalled(gameId);
     if (game.platform && game.platform !== "pc") return playEmulatedGame(gameId, game.dir, game.platform);
-    let exe = game.executable ?? (await findExecutable(game.dir, game.title));
+    if (game.needsSetup && !game.installedDir) throw new Error(`${game.title} is still ${game.needsSetup === "disc" ? "a disc image" : "an installer"}. Use Run installer first.`);
+    const home = game.installedDir ?? game.dir;
+    let exe = game.executable ?? (await findExecutable(home, game.title).then((x) => x && relTo(game.dir, path.join(home, x))));
     if (!exe) {
-      const r = await dialog.showOpenDialog(win!, { title: `Which file starts ${game.title}?`, defaultPath: game.dir, properties: ["openFile"] });
+      const r = await dialog.showOpenDialog(win!, { title: `Which file starts ${game.title}?`, defaultPath: home, properties: ["openFile"] });
       if (r.canceled) return null;
-      exe = path.relative(game.dir, r.filePaths[0]!);
+      exe = relTo(game.dir, r.filePaths[0]!);
     }
     if (exe !== game.executable) await saveExecutable(game.dir, exe);
     send({ gameId, type: "playing" });
@@ -390,20 +456,7 @@ function registerIpc(): void {
         sevenZip: await prepSevenZip(),
         onStep: prepareStep(gameId),
         runInstaller: (setup, target, args) => runElevated(setup, args),
-        confirmInstalled: async (suggested) => {
-          const { response } = await dialog.showMessageBox(win!, {
-            type: "question",
-            buttons: ["Upload this folder", "Choose another folder", "Cancel"],
-            defaultId: 0,
-            cancelId: 2,
-            message: "Is the game installed?",
-            detail: `We asked the installer to use:\n${suggested}\n\nIf you picked a different folder in the installer, choose it instead. Start the game once first if it needs to finish setting up.`,
-          });
-          if (response === 2) return null;
-          if (response === 0) return suggested;
-          const r = await dialog.showOpenDialog(win!, { title: "Folder the game was installed to", properties: ["openDirectory"] });
-          return r.canceled ? null : r.filePaths[0]!;
-        },
+        confirmInstalled: (suggested) => askInstalledFolder(suggested, "Upload this folder"),
       });
       send({ gameId, type: "prepare", message: game ? "Uploaded. Everyone now gets the installed version." : "Cancelled", done: true, newId: game?.id });
       return game;
@@ -432,6 +485,79 @@ function registerIpc(): void {
     }
   });
 
+  /**
+   * A downloaded installer: run it once on this PC, installing into a folder inside the game's
+   * folder, then remember where the game went so Play starts it.
+   */
+  ipcMain.handle("gm:runSetup", async (e, gameId: string) => {
+    fromServer(e);
+    if (process.platform !== "win32") throw new Error("Running installers needs the Windows app. On Linux, run it with Wine yourself from Open folder.");
+    if (running.has(gameId)) throw new Error("Already working on this game");
+    const game = await findInstalled(gameId);
+    running.set(gameId, new AbortController());
+    const step = (message: string, extra: object = {}) => send({ gameId, type: "prepare", message, ...extra });
+    try {
+      const target = path.join(game.dir, "Installed");
+      await runLocalSetup(game.dir, target, { sevenZip: await prepSevenZip(), runInstaller: (setup, _target, args) => runElevated(setup, args), onStep: step });
+      const folder = await askInstalledFolder(target, "Use this folder");
+      if (!folder || !existsSync(folder) || !(await readdir(folder)).length) {
+        step(folder ? `${folder} is empty; the installer didn't finish` : "Cancelled", { done: true, error: !!folder });
+        return null;
+      }
+      let exe = await findExecutable(folder, game.title).then((x) => x && relTo(game.dir, path.join(folder, x)));
+      if (!exe) {
+        const r = await dialog.showOpenDialog(win!, { title: `Which file starts ${game.title}?`, defaultPath: folder, properties: ["openFile"] });
+        if (!r.canceled) exe = relTo(game.dir, r.filePaths[0]!);
+      }
+      await saveManifest(game.dir, { installedDir: folder, executable: exe ?? undefined, setupAt: new Date().toISOString() });
+      // The setup files aren't needed to play; offer the space back when the game went inside the folder.
+      const rel = path.relative(game.dir, folder);
+      if (rel && !rel.startsWith("..") && !path.isAbsolute(rel)) {
+        const top = rel.split(path.sep)[0]!;
+        const leftovers = (await readdir(game.dir)).filter((n) => n !== top && n !== ".game-manager.json");
+        const { response } = await dialog.showMessageBox(win!, {
+          type: "question",
+          buttons: ["Delete installer files", "Keep them"],
+          defaultId: 0,
+          cancelId: 1,
+          message: "Delete the installer files?",
+          detail: `${game.title} is installed in ${folder}. The ${leftovers.length} installer files beside it aren't needed to play.`,
+        });
+        if (response === 0) for (const n of leftovers) await rm(path.join(game.dir, n), { recursive: true, force: true });
+      }
+      step(`Installed in ${folder}. Press Play to start it.`, { done: true });
+      return { installedDir: folder, executable: exe };
+    } catch (err) {
+      step((err as Error).message, { done: true, error: true });
+      throw err;
+    } finally {
+      running.delete(gameId);
+    }
+  });
+
+  /** Admin: zip the game the installer put on this PC and upload it in place of the installer. */
+  ipcMain.handle("gm:uploadInstalled", async (e, gameId: string) => {
+    fromServer(e);
+    const local = await findInstalled(gameId);
+    if (!local.installedDir) throw new Error("Run the installer first");
+    if (running.has(gameId)) throw new Error("Already working on this game");
+    running.set(gameId, new AbortController());
+    const workDir = path.join(path.dirname(local.dir), `.prepare-${gameId}`);
+    try {
+      const game = await uploadInstalledFolder(await client(), gameId, local.installedDir, { workDir, sevenZip: await prepSevenZip(), onStep: prepareStep(gameId) });
+      // The server game has a new id now; keep this PC's copy linked to it.
+      await saveManifest(local.dir, { gameId: game.id, title: game.title, source: game.source, needsSetup: null });
+      send({ gameId, type: "prepare", message: "Uploaded. Everyone now gets the installed version.", done: true, newId: game.id });
+      return game;
+    } catch (err) {
+      send({ gameId, type: "prepare", message: (err as Error).message, done: true, error: true });
+      throw err;
+    } finally {
+      running.delete(gameId);
+      await rm(workDir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+
   ipcMain.handle("gm:uninstall", async (e, gameId: string) => {
     fromServer(e);
     const game = await findInstalled(gameId);
@@ -441,7 +567,9 @@ function registerIpc(): void {
       defaultId: 1,
       cancelId: 1,
       message: `Delete ${game.title}?`,
-      detail: `This removes ${game.dir} and everything in it, including saves stored there.`,
+      detail:
+        `This removes ${game.dir} and everything in it, including saves stored there.` +
+        (game.installedDir && path.relative(game.dir, game.installedDir).startsWith("..") ? `\n\nThe game the installer put in ${game.installedDir} stays; remove it with Windows' Apps settings.` : ""),
     });
     if (response !== 0) return false;
     await uninstallGame(game.dir);

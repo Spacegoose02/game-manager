@@ -43,7 +43,7 @@ export function PreparePanel({ game }: { game: GameDetail }) {
     <section className="panel prepare">
       <h2>Needs setting up</h2>
       {!isAdmin ? (
-        <p className="muted">This game is {what}. An admin can install it once and upload the installed copy so it installs like any other game. Until then, installing downloads the {game.needsSetup === "disc" ? "disc image" : "installer"} for you to run.</p>
+        <p className="muted">This game is {what}. An admin can install it once and upload the installed copy so it installs like any other game. Until then, the app downloads the {game.needsSetup === "disc" ? "disc image" : "installer"} and offers Run installer instead of Play.</p>
       ) : !desktop ? (
         <p className="muted">
           This game is {what}. Open this page in the Windows app and choose <strong>Install here and upload</strong>: it runs the setup once, zips the installed game and puts it on the

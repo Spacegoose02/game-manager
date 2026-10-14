@@ -164,3 +164,39 @@ async function mountIso(iso: string): Promise<string> {
 async function dismountIso(iso: string): Promise<void> {
   await powershell(`Dismount-DiskImage -ImagePath ${psQuote(iso)} | Out-Null`);
 }
+
+/**
+ * Runs the setup program of a downloaded disc or installer game in place, installing into
+ * target (a folder beside the setup files). On Windows ISOs are mounted for the run; elsewhere
+ * they're unpacked with 7-Zip. Resolves when the installer closes.
+ */
+export async function runLocalSetup(
+  dir: string,
+  target: string,
+  opts: { sevenZip: SevenZip; runInstaller: PrepareOptions["runInstaller"]; onStep?: (message: string) => void },
+): Promise<void> {
+  let media = dir;
+  const mounted: string[] = [];
+  try {
+    const images = (await walk(dir, 2)).filter((f) => /\.iso$/i.test(f));
+    if (images.length) {
+      const iso = images.sort()[0]!;
+      if (process.platform === "win32") {
+        opts.onStep?.(`Mounting ${path.basename(iso)}`);
+        media = await mountIso(iso);
+        mounted.push(iso);
+      } else {
+        opts.onStep?.(`Unpacking ${path.basename(iso)}`);
+        media = path.join(dir, ".disc");
+        await extractArchive(opts.sevenZip, "zip", iso, media);
+      }
+    }
+    const setup = await findSetup(media);
+    if (!setup) throw new Error(`No setup program found in ${media}. Run it yourself from Open folder.`);
+    await mkdir(target, { recursive: true });
+    opts.onStep?.("Running the installer. Finish it, then come back here.");
+    await opts.runInstaller(setup, target, await installerArgs(setup, target));
+  } finally {
+    for (const iso of mounted) await dismountIso(iso).catch(() => {});
+  }
+}

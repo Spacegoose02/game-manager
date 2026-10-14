@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { access, constants, readdir, rename, rm, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { groupArchiveSets, safeFolderName } from "@lootden/shared";
+import { groupArchiveSets, safeFolderName, setupKindOf } from "@lootden/shared";
 import { cleanTitle } from "../metadata/titles.js";
 
 export interface TidyOptions {
@@ -162,7 +162,7 @@ export async function tidyDownload(
 
   const name = tidyName(releaseName);
   // Disc images and installers get set up once on a PC (see "Prepare" in the app), so keep them loose.
-  const needsSetup = (await walk(root)).some((f) => !f.dir && f.depth <= 1 && /\.(iso|img|bin|cue)$/i.test(f.name));
+  const needsSetup = setupKindOf((await walk(root)).filter((f) => !f.dir).map((f) => ({ path: path.relative(root, f.path) }))) !== null;
   if (needsSetup && opts.repack === "zip") report.warnings.push("Kept as a folder: it's a disc image or installer to set up with the app first");
   if (opts.repack === "zip" && sevenZip && !needsSetup) {
     const target = path.join(gamesDir, `${name}.zip`);

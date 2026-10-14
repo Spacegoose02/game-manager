@@ -47,7 +47,7 @@ import { timeToBeat } from "./metadata/time-to-beat.js";
 import { SourceRegistry } from "./sources/registry.js";
 import { sourceRoutes } from "./routes/sources.js";
 
-export const VERSION = "0.6.0";
+export const VERSION = "0.6.1";
 
 /** Routes reachable without signing in. */
 const PUBLIC = [/^\/api\/health$/, /^\/api\/auth\//, /^\/api\/avatars\//];

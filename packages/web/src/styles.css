@@ -2335,13 +2335,32 @@ label.field {
   min-width: 0;
   flex: 1;
 }
+/* Release names are often one long word (Some_Game_v1.2-GROUP): clip with an ellipsis, full name on hover. */
+.source-body > a,
 .source-body strong,
 .source-body small {
+  display: block;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.source-list li > .button {
+  flex: none;
+}
 .source-body a {
   color: var(--text);
   text-decoration: none;
+}
+
+/* Titles from indexers, feeds and stores can be long unbroken names; let them break anywhere instead of overflowing. */
+.table td,
+.wish-body strong,
+.list li > span,
+.news-mini strong {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.row-note {
+  margin: -0.4rem 0 0.6rem;
 }

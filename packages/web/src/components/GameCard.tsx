@@ -32,10 +32,11 @@ export function GameGrid({ games, aspect }: { games: GameSummary[]; aspect?: num
 }
 
 /** Horizontally scrolling row with snap points; swipe on touch, arrows or d-pad elsewhere. */
-export function GameRow({ title, games }: { title: string; games: GameSummary[] }) {
+export function GameRow({ title, games, note }: { title: string; games: GameSummary[]; note?: string }) {
   return (
     <section className="row">
       <h2>{title}</h2>
+      {note && <p className="muted small row-note">{note}</p>}
       <div className="row-track">
         {games.map((g) => (
           <GameCard key={g.id} game={g} />

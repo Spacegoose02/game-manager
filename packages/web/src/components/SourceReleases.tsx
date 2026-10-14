@@ -4,6 +4,8 @@ import { api, type SourceRelease } from "../api";
 
 const day = (d: string | null) => (d ? new Date(`${d.slice(0, 10)}T12:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short" }) : "");
 
+const meta = (r: SourceRelease) => [r.sourceName, day(r.date), ...Object.entries(r.details ?? {}).map(([k, v]) => `${k}: ${v}`)].filter(Boolean).join(" · ");
+
 /** Discover: what the admin's release sources have listed lately. Hidden when none are on. */
 export function SourceReleases({ isAdmin }: { isAdmin: boolean }) {
   const [items, setItems] = useState<SourceRelease[] | null>(null);
@@ -27,14 +29,14 @@ export function SourceReleases({ isAdmin }: { isAdmin: boolean }) {
             {r.image ? <img src={r.image} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <span className="source-blank">{r.title.slice(0, 1)}</span>}
             <span className="source-body">
               {r.url ? (
-                <a href={r.url} target="_blank" rel="noreferrer">
+                <a href={r.url} target="_blank" rel="noreferrer" title={r.title}>
                   <strong>{r.title}</strong>
                 </a>
               ) : (
-                <strong>{r.title}</strong>
+                <strong title={r.title}>{r.title}</strong>
               )}
-              <small className="muted">
-                {[r.sourceName, day(r.date), ...Object.entries(r.details ?? {}).map(([k, v]) => `${k}: ${v}`)].filter(Boolean).join(" · ")}
+              <small className="muted" title={meta(r)}>
+                {meta(r)}
               </small>
             </span>
             <Link className="button small ghost" to={`/discover?q=${encodeURIComponent(r.title)}`}>

@@ -9,6 +9,11 @@ import { GameRow } from "../components/GameCard";
 import { ListingRow } from "../components/Listing";
 import { VideoRow } from "../components/Videos";
 
+const NOTES: Record<string, string> = {
+  setup:
+    "These are still installers or disc images. Install one once in the Windows app (Run installer, then Upload installed game) and everyone after you gets a ready-to-play download.",
+};
+
 /** The home page: featured games, then library rows mixed with news, videos and upcoming releases. */
 export function Home() {
   const { me } = useAuth();
@@ -59,7 +64,7 @@ export function Home() {
     const i = sections.findIndex((s) => s.id === id);
     return i < 0 ? null : sections.splice(i, 1)[0]!;
   };
-  const row = (s: HomeData["sections"][number] | null) => (s ? <GameRow key={s.id} title={s.title} games={s.games} /> : null);
+  const row = (s: HomeData["sections"][number] | null) => (s ? <GameRow key={s.id} title={s.title} games={s.games} note={NOTES[s.id]} /> : null);
 
   // Library rows first, with the extras slotted between them so the page alternates.
   const blocks: ReactNode[] = [row(take("continue")), row(take("recent"))];
