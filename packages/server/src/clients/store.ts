@@ -3,7 +3,18 @@ import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import type { Db } from "../db/database.js";
 import type { FetchLike } from "../metadata/http.js";
+
+const RELEASE_KEY = "clients.release";
+
+/** The GitHub release the hosted files came from, so newer ones can be fetched by themselves. */
+export interface ReleaseSource {
+  repo: string;
+  tag: string;
+  fetchedAt: string;
+  checkedAt: string | null;
+}
 
 export interface ClientFile {
   name: string;
@@ -40,6 +51,7 @@ export class ClientDownloads {
   constructor(
     dataDir: string,
     private readonly fetchImpl: FetchLike = fetch,
+    private readonly db: Db | null = null,
   ) {
     this.dir = path.join(dataDir, "clients");
   }
@@ -90,14 +102,7 @@ export class ClientDownloads {
    * replacing files with the same name. Returns what was fetched.
    */
   async fetchRelease(repo: string): Promise<{ tag: string; files: string[] }> {
-    if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('Enter the repository as "owner/name"');
-    const res = await this.fetchImpl(`https://api.github.com/repos/${repo}/releases/latest`, {
-      headers: { Accept: "application/vnd.github+json", "User-Agent": "lootden" },
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (res.status === 404) throw new Error(`${repo} has no published release (or the repository is private)`);
-    if (!res.ok) throw new Error(`GitHub answered ${res.status}`);
-    const release = (await res.json()) as { tag_name: string; assets: Array<{ name: string; browser_download_url: string }> };
+    const release = await this.latest(repo);
     const files: string[] = [];
     for (const asset of release.assets) {
       let name: string;
@@ -112,6 +117,49 @@ export class ClientDownloads {
       files.push(name);
     }
     if (!files.length) throw new Error(`Release ${release.tag_name} has no app files attached`);
+    const at = new Date().toISOString();
+    this.remember({ repo, tag: release.tag_name, fetchedAt: at, checkedAt: at });
     return { tag: release.tag_name, files };
+  }
+
+  private async latest(repo: string): Promise<{ tag_name: string; assets: Array<{ name: string; browser_download_url: string }> }> {
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('Enter the repository as "owner/name"');
+    const res = await this.fetchImpl(`https://api.github.com/repos/${repo}/releases/latest`, {
+      headers: { Accept: "application/vnd.github+json", "User-Agent": "lootden" },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (res.status === 404) throw new Error(`${repo} has no published release (or the repository is private)`);
+    if (!res.ok) throw new Error(`GitHub answered ${res.status}`);
+    return (await res.json()) as { tag_name: string; assets: Array<{ name: string; browser_download_url: string }> };
+  }
+
+  /** The release the files came from, when an admin fetched one. */
+  source(): ReleaseSource | null {
+    const row = this.db?.prepare("SELECT value FROM settings WHERE key = ?").get(RELEASE_KEY) as { value: string } | undefined;
+    if (!row) return null;
+    try {
+      return JSON.parse(row.value) as ReleaseSource;
+    } catch {
+      return null;
+    }
+  }
+
+  private remember(r: ReleaseSource): void {
+    this.db?.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(RELEASE_KEY, JSON.stringify(r));
+  }
+
+  /**
+   * Once an admin has fetched a release, newer ones are fetched by themselves, so the desktop
+   * apps (which update from this server) pick them up. Returns the new tag, or null.
+   */
+  async refresh(): Promise<string | null> {
+    const src = this.source();
+    if (!src) return null;
+    const release = await this.latest(src.repo);
+    if (release.tag_name === src.tag) {
+      this.remember({ ...src, checkedAt: new Date().toISOString() });
+      return null;
+    }
+    return (await this.fetchRelease(src.repo)).tag;
   }
 }

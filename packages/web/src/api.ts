@@ -475,6 +475,7 @@ export const api = {
   clients: () => call<ClientFile[]>("GET", "/api/clients"),
   uploadClient: (file: File) => upload<ClientFile>("PUT", `/api/clients/${encodeURIComponent(file.name)}`, file, "application/octet-stream"),
   deleteClient: (name: string) => call("DELETE", `/api/clients/${encodeURIComponent(name)}`),
+  clientSource: () => call<{ repo: string; tag: string; fetchedAt: string; checkedAt: string | null } | null>("GET", "/api/clients/source"),
   fetchRelease: (repo: string) => call<{ tag: string; files: string[] }>("POST", "/api/clients/github", { repo }),
 
   saves: (id: string) => call<SaveBackup[]>("GET", `/api/games/${id}/saves`),

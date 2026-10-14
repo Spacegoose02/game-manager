@@ -87,6 +87,8 @@ function stageOf(d: DownloadRecord): { stage: Stage; label: string; tone: "go" |
   if (d.status === "removed") return { stage: "done", label: "Removed", tone: "muted" };
   if (d.status === "importing") return { stage: "active", label: "Importing", tone: "go" };
   const state = d.live?.state;
+  // Finished in the client but the import keeps failing (files not where the path mapping says).
+  if (d.error && (!d.live || d.live.progress >= 1)) return { stage: "done", label: "Can't import", tone: "bad" };
   if (!state) return { stage: "queued", label: "Waiting for client", tone: "wait" };
   if (state === "paused") return { stage: "queued", label: "Paused", tone: "wait" };
   if (state === "queued") return { stage: "queued", label: "Queued", tone: "wait" };

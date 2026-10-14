@@ -6,6 +6,8 @@ import { HttpProblem, requireAdmin, type AppContext } from "../context.js";
 
 export function clientRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get("/api/clients", async () => ctx.clients.list());
+  /** Where the files came from and when the server last looked for a newer release. */
+  app.get("/api/clients/source", async () => ctx.clients.source());
 
   app.get<{ Params: { name: string } }>("/api/clients/:name", async (req, reply) => {
     let file: string;

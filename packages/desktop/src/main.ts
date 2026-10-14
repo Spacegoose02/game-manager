@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, Menu, net, session, shell, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, Notification, session, shell, Tray, type IpcMainInvokeEvent } from "electron";
 import {
   addBiosFile,
   adoptFolder,
@@ -36,7 +36,8 @@ import {
   UpdateMismatchError,
   type InstallEvent,
 } from "@lootden/client";
-import { SettingsStore } from "./settings.js";
+import { SettingsStore, type DesktopSettings } from "./settings.js";
+import { downloadUpdate, installKind, launchUpdate, pickUpdate, type AvailableUpdate } from "./updater.js";
 
 /** Emulators live in the app's data folder unless the user moved them. */
 const toolsDir = () => settings.get().toolsDir || path.join(app.getPath("userData"), "Emulators");
@@ -48,6 +49,13 @@ let win: BrowserWindow | null = null;
 let settings: SettingsStore;
 const running = new Map<string, AbortController>();
 let pendingDeepLink: string | null = process.argv.find(isDeepLink) ?? null;
+let tray: Tray | null = null;
+/** Set once the app is really quitting, so closing the window stops hiding it. */
+let quitting = false;
+/** Games running now, so the app doesn't update itself in the middle of one. */
+const playing = new Set<string>();
+/** Started at login: stay in the tray until opened. */
+const startHidden = process.argv.includes("--hidden");
 
 // Keep settings from before the rename: the app's data folder used to be "Game Manager".
 const legacyUserData = path.join(app.getPath("appData"), "Game Manager");
@@ -176,7 +184,178 @@ function relTo(dir: string, file: string): string {
 }
 
 function send(payload: object): void {
+  const p = payload as { gameId?: string; type?: string };
+  if (p.gameId && p.type === "playing") playing.add(p.gameId);
+  if (p.gameId && (p.type === "stopped" || p.type === "error")) playing.delete(p.gameId);
+  if (p.type === "playing" || p.type === "stopped") refreshTray();
   win?.webContents.send("gm:progress", payload);
+}
+
+// ---- Tray, closing and quitting ---------------------------------------------------
+
+const icon = () => nativeImage.createFromPath(path.join(__dirname, "..", "build", "icon.png"));
+
+function showWindow(route?: string): void {
+  if (!win) return void createWindow();
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  if (route && origin()) void win.loadURL(`${origin()}${route}`);
+}
+
+/** Quits for real; installs a downloaded app update on the way out. */
+async function quitApp(): Promise<void> {
+  if (running.size) {
+    const ask = {
+      type: "warning" as const,
+      buttons: ["Quit", "Cancel"],
+      defaultId: 1,
+      cancelId: 1,
+      message: "Quit LootDen?",
+      detail: `${running.size === 1 ? "An install is" : `${running.size} installs are`} still running and will stop.`,
+    };
+    const { response } = await (win?.isVisible() ? dialog.showMessageBox(win, ask) : dialog.showMessageBox(ask));
+    if (response !== 0) return;
+  }
+  quitting = true;
+  if (update.state === "ready" && update.file) await launchUpdate(installKind(), update.file).catch(() => {});
+  app.quit();
+}
+
+function refreshTray(): void {
+  if (!tray) return;
+  const games = playing.size ? ` · playing ${playing.size === 1 ? "a game" : `${playing.size} games`}` : "";
+  tray.setToolTip(`LootDen ${app.getVersion()}${games}`);
+  const u = update;
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: "Open LootDen", click: () => showWindow() },
+      { label: "Installed games", click: () => showWindow("/library?tab=installed") },
+      { type: "separator" },
+      u.state === "ready"
+        ? { label: `Restart to update to ${u.version}`, click: () => void installNow() }
+        : u.state === "downloading"
+          ? { label: `Downloading update ${u.version}…`, enabled: false }
+          : { label: "Check for app updates", click: () => void checkForUpdate(true) },
+      { type: "separator" },
+      { label: "Quit LootDen", click: () => void quitApp() },
+    ]),
+  );
+}
+
+function createTray(): void {
+  if (tray) return;
+  try {
+    tray = new Tray(icon().resize({ width: 16, height: 16 }));
+  } catch {
+    tray = null; // No tray on this desktop: closing quits instead.
+    return;
+  }
+  tray.on("click", () => showWindow());
+  tray.on("double-click", () => showWindow());
+  refreshTray();
+}
+
+function applyLoginItem(s: DesktopSettings): void {
+  if (process.platform !== "win32" && process.platform !== "darwin") return;
+  app.setLoginItemSettings({ openAtLogin: s.openAtLogin, args: ["--hidden"] });
+}
+
+// ---- App updates from the server --------------------------------------------------
+
+interface UpdateState {
+  state: "idle" | "checking" | "none" | "available" | "downloading" | "ready" | "error" | "unsupported";
+  version?: string;
+  received?: number;
+  total?: number;
+  error?: string;
+  checkedAt?: string;
+  /** The downloaded installer or app file, once state is "ready". */
+  file?: string;
+}
+let update: UpdateState = { state: installKind() === "other" ? "unsupported" : "idle" };
+
+function setUpdate(next: UpdateState): void {
+  update = next;
+  const { file: _f, ...shown } = next;
+  win?.webContents.send("gm:progress", { gameId: "lootden-app", type: "appUpdate", current: app.getVersion(), ...shown });
+  refreshTray();
+}
+
+const busy = () => running.size > 0 || playing.size > 0;
+
+/**
+ * Looks on the server's Get the app page for a newer build of this app. When automatic updates
+ * are on it downloads it, and installs it straight away if the window is closed and nothing
+ * is installing or playing; otherwise it waits for Restart to update (or the next quit).
+ */
+async function checkForUpdate(manual = false): Promise<UpdateState> {
+  const kind = installKind();
+  if (kind === "other") return update;
+  if (update.state === "downloading" || update.state === "checking") return update;
+  if (update.state === "ready" && !manual) return update;
+  if (!settings.get().serverUrl) return update;
+  setUpdate({ ...update, state: "checking", error: undefined });
+  let found: AvailableUpdate | null;
+  try {
+    const api = await client();
+    found = pickUpdate(await api.json<Array<{ name: string; size: number }>>("/api/clients"), app.getVersion(), kind);
+  } catch (err) {
+    setUpdate({ state: "error", error: (err as Error).message, checkedAt: new Date().toISOString() });
+    return update;
+  }
+  const checkedAt = new Date().toISOString();
+  if (!found) {
+    setUpdate({ state: "none", checkedAt });
+    return update;
+  }
+  if (update.state === "ready" && update.version === found.version) return update;
+  setUpdate({ state: "available", version: found.version, total: found.size, checkedAt });
+  if (manual || settings.get().autoUpdate) void fetchUpdate(found);
+  return update;
+}
+
+async function fetchUpdate(found: AvailableUpdate): Promise<void> {
+  const target = path.join(app.getPath("temp"), "lootden-update", found.file);
+  try {
+    setUpdate({ ...update, state: "downloading", version: found.version, received: 0, total: found.size });
+    let last = 0;
+    await client(); // makes sure this computer has a token
+    await downloadUpdate((u, i) => net.fetch(u, i), `${origin()}/api/clients/${encodeURIComponent(found.file)}`, settings.get().apiToken, target, (received, total) => {
+      if (Date.now() - last < 500) return;
+      last = Date.now();
+      setUpdate({ ...update, state: "downloading", received, total: total || found.size });
+    });
+    setUpdate({ ...update, state: "ready", version: found.version, file: target, received: found.size });
+    if (!win?.isVisible() && !busy() && settings.get().autoUpdate) await installNow();
+    else if (Notification.isSupported() && !win?.isVisible()) new Notification({ title: "LootDen update ready", body: `Version ${found.version} installs when you quit, or choose Restart to update.` }).show();
+  } catch (err) {
+    setUpdate({ state: "error", version: found.version, error: (err as Error).message });
+  }
+}
+
+async function installNow(): Promise<void> {
+  if (update.state !== "ready" || !update.file) return;
+  if (busy()) {
+    const { response } = await dialog.showMessageBox({
+      type: "warning",
+      buttons: ["Update now", "Later"],
+      defaultId: 1,
+      cancelId: 1,
+      message: "Update LootDen now?",
+      detail: "A game or install is running. Updating closes the app, which stops installs and play time tracking for the running game.",
+    });
+    if (response !== 0) return;
+  }
+  quitting = true;
+  try {
+    await launchUpdate(installKind(), update.file);
+  } catch (err) {
+    quitting = false;
+    setUpdate({ ...update, state: "error", error: (err as Error).message });
+    return;
+  }
+  app.quit();
 }
 
 function registerIpc(): void {
@@ -677,6 +856,32 @@ function registerIpc(): void {
     await shell.openPath((await findInstalled(gameId)).dir);
   });
 
+  ipcMain.handle("gm:appSettings", (e, patch?: Partial<Pick<DesktopSettings, "closeToTray" | "autoUpdate" | "openAtLogin">>) => {
+    fromServer(e);
+    if (patch) {
+      const clean: Partial<DesktopSettings> = {};
+      for (const k of ["closeToTray", "autoUpdate", "openAtLogin"] as const) if (typeof patch[k] === "boolean") clean[k] = patch[k];
+      const s = settings.update(clean);
+      if ("openAtLogin" in clean) applyLoginItem(s);
+      if (clean.autoUpdate) void checkForUpdate();
+    }
+    const s = settings.get();
+    return { closeToTray: s.closeToTray, autoUpdate: s.autoUpdate, openAtLogin: s.openAtLogin, trayAvailable: !!tray, loginItemSupported: process.platform === "win32" || process.platform === "darwin" };
+  });
+
+  ipcMain.handle("gm:appUpdate", async (e, action: "status" | "check" | "install" = "status") => {
+    fromServer(e);
+    if (action === "check") await checkForUpdate(true);
+    if (action === "install") await installNow();
+    const { file: _f, ...shown } = update;
+    return { current: app.getVersion(), kind: installKind(), ...shown };
+  });
+
+  ipcMain.handle("gm:quit", async (e) => {
+    fromServer(e);
+    await quitApp();
+  });
+
   ipcMain.handle("gm:changeServer", async (e) => {
     fromServer(e);
     settings.update({ serverUrl: "", apiToken: "" });
@@ -697,6 +902,7 @@ async function openDeepLink(link: string): Promise<void> {
   const m = link.match(/^(?:lootden|gamemanager):\/\/install\/([\w-]+)/);
   if (!m || !win || !origin()) return;
   if (win.isMinimized()) win.restore();
+  win.show();
   win.focus();
   await win.loadURL(`${origin()}/games/${m[1]}?install=1`);
 }
@@ -710,6 +916,7 @@ async function createWindow(): Promise<void> {
     minHeight: 560,
     backgroundColor: "#0d0820",
     fullscreen: s.fullscreen,
+    show: !(startHidden && tray),
     autoHideMenuBar: true,
     title: "LootDen",
     icon: path.join(__dirname, "..", "build", "icon.png"),
@@ -726,6 +933,20 @@ async function createWindow(): Promise<void> {
     event.preventDefault();
     if (!url.startsWith(`${origin()}/api/auth/oidc`)) void shell.openExternal(url);
   });
+  // Closing hides the window to the tray: the app keeps tracking play time and installs.
+  win.on("close", (event) => {
+    if (quitting || !tray || !settings.get().closeToTray) return;
+    event.preventDefault();
+    win?.hide();
+    if (!settings.get().trayHintShown) {
+      settings.update({ trayHintShown: true });
+      if (Notification.isSupported())
+        new Notification({ title: "LootDen is still running", body: "It keeps tracking play time and installs from the tray. Right-click the tray icon to quit, or change this in your profile." }).show();
+    }
+    // Closed with an update waiting: a good moment to install it.
+    if (update.state === "ready" && !busy() && settings.get().autoUpdate) void installNow();
+  });
+  win.on("closed", () => (win = null));
   win.webContents.on("before-input-event", (_e, input) => {
     if (input.type === "keyDown" && input.key === "F11") win?.setFullScreen(!win.isFullScreen());
   });
@@ -739,17 +960,31 @@ async function createWindow(): Promise<void> {
 
 app.on("second-instance", (_e, argv) => {
   const link = argv.find(isDeepLink);
-  if (link) void openDeepLink(link);
-  else win?.focus();
+  if (link) {
+    win?.show();
+    void openDeepLink(link);
+  } else showWindow();
 });
+app.on("before-quit", () => (quitting = true));
 app.on("open-url", (e, url) => {
   e.preventDefault();
   void openDeepLink(url);
 });
-app.on("window-all-closed", () => app.quit());
+app.on("window-all-closed", () => {
+  if (quitting || !tray || !settings.get().closeToTray) app.quit();
+});
 
 void app.whenReady().then(async () => {
   settings = new SettingsStore(path.join(app.getPath("userData"), "settings.json"));
   registerIpc();
+  createTray();
+  applyLoginItem(settings.get());
   await createWindow();
+  // The copy replaced by the last update.
+  const self = process.env.PORTABLE_EXECUTABLE_FILE ?? process.env.APPIMAGE;
+  if (self) void rm(`${self}.old`, { force: true }).catch(() => {});
+  void rm(path.join(app.getPath("temp"), "lootden-update"), { recursive: true, force: true }).catch(() => {});
+  // Look for app updates shortly after start, then every few hours.
+  setTimeout(() => void checkForUpdate(), 30_000);
+  setInterval(() => void checkForUpdate(), 4 * 3600_000);
 });

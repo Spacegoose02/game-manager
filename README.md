@@ -35,7 +35,8 @@ on their own PC with one click, like a small private Steam.
 - **Desktop app** for Windows and Linux: pick a drive, press Install. It downloads (with
   resume), unpacks zip / 7z / rar, deletes the archives, and tracks play time. Installers
   and disc images get a **Run installer** button, and an admin can upload the installed
-  game so everyone after them gets a ready-to-play download.
+  game so everyone after them gets a ready-to-play download. It runs in the system tray and
+  updates itself from the server.
 - **Updates and DLC:** patches and DLC (in an `Updates` or `DLC` folder, or named like
   `Game Update v1.3`) get their own Updates page instead of cluttering the library. The
   desktop app applies them over the installed game with a backup, so they can be undone.

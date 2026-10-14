@@ -170,6 +170,54 @@ describe("download connectors", () => {
     await app.close();
   });
 
+  it("doesn't import a download twice, and shows one already moved into the library as imported", async () => {
+    const fake = fakeServices();
+    const { app, ctx } = await makeApp(root, { apiToken: "svc" }, { fetchImpl: fake.impl });
+    const headers = { authorization: "Bearer svc" };
+    const folder = path.join(downloads, "moved", "games");
+    for (const name of ["Moved Game", "Folder Game"]) {
+      await mkdir(path.join(folder, name), { recursive: true });
+      await writeFile(path.join(folder, name, `${name}.exe`), "game");
+    }
+    const old = new Date(Date.now() - 3600_000);
+    const { utimes } = await import("node:fs/promises");
+    for (const name of ["Moved Game", "Folder Game"]) {
+      await utimes(path.join(folder, name, `${name}.exe`), old, old);
+      await utimes(path.join(folder, name), old, old);
+    }
+    await app.inject({
+      method: "PUT",
+      url: "/api/connectors",
+      headers,
+      payload: { ...SETTINGS, import: { mode: "move", folder, autoImportFolder: true, pathMappings: [{ from: "/data/torrents/games", to: folder }] } },
+    });
+    const results = (await app.inject({ url: "/api/downloads/search?q=cool%20game", headers })).json();
+    await app.inject({ method: "POST", url: "/api/downloads", headers, payload: { url: results[1].downloadUrl, title: "Moved Game", protocol: "torrent" } });
+    Object.assign(fake.torrents[0]!, { name: "Moved Game", content_path: "/data/torrents/games/Moved Game", progress: 1, state: "stalledUP" });
+
+    // Before 0.9.1 the folder import moved it first, and the download then said "not found" forever.
+    await ctx.downloads.reconcile();
+    let list = (await app.inject({ url: "/api/downloads", headers })).json();
+    assert.equal(list.downloads[0].status, "imported");
+    assert.equal(list.downloads[0].error, null);
+    // The folder import took only the game that wasn't ours; both are in the library once.
+    const imports = ctx.db.prepare("SELECT name, status FROM folder_imports ORDER BY name").all() as Array<{ name: string; status: string }>;
+    assert.deepEqual(imports.map((i) => `${i.name}:${i.status}`), ["Folder Game:imported", "Moved Game:imported"]);
+    await ctx.library.rescan();
+    assert.equal(ctx.library.list({ search: "moved game" }).length, 1);
+    assert.equal(ctx.library.list({ search: "folder game" }).length, 1);
+
+    // A download whose files were already moved by a folder import is imported, not failed.
+    const db = ctx.db;
+    db.prepare("UPDATE downloads SET status = 'downloading', error = 'Finished download not found' WHERE id = ?").run(list.downloads[0].id);
+    db.prepare("INSERT INTO folder_imports (name, status, target, error, at) VALUES ('Moved Game', 'imported', '/games/Moved Game', NULL, '2026-01-01') ON CONFLICT(name) DO UPDATE SET status = 'imported', target = excluded.target").run();
+    Object.assign(fake.torrents[0]!, { state: "missingFiles" });
+    await ctx.downloads.reconcile();
+    list = (await app.inject({ url: "/api/downloads", headers })).json();
+    assert.deepEqual([list.downloads[0].status, list.downloads[0].error, list.downloads[0].importedPath], ["imported", null, "/games/Moved Game"]);
+    await app.close();
+  });
+
   it("hands qBittorrent a magnet or torrent file it can use, and says so when it drops one", async () => {
     process.env.GM_TORRENT_VERIFY_MS = "5";
     const fake = fakeServices();

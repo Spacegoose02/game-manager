@@ -43,6 +43,20 @@ game that it didn't install itself.
 **Saves:** when a game has a save location set, the app backs up its saves to the server
 after every session; restore them from the game page on another PC.
 
+**Runs in the tray:** closing the window keeps LootDen running in the system tray, so it
+keeps tracking play time and finishing installs. Click the tray icon to open it again;
+right-click it for **Installed games**, app updates and **Quit LootDen**. Profile, **This
+computer** has the options: close to tray, start with the computer (Windows), automatic
+updates, and **Exit LootDen** to close it completely.
+
+**App updates:** the app checks the server's **Get the app** files every few hours. When a
+newer build of the same kind is there (installer, portable `.exe` or AppImage), it downloads
+it and installs it when the window is closed and nothing is installing or playing, or when
+you choose **Restart to update** or quit. The `.deb` can't replace itself; install new
+versions of it by hand. Once an admin has pressed **Get latest release**, the server fetches
+newer GitHub releases by itself twice a day, so the apps update without anyone doing
+anything.
+
 **Handhelds:** Profile, **Touch and handheld mode** makes targets bigger, and the UI
 works with a controller.
 

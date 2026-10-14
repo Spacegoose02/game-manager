@@ -15,11 +15,19 @@ export interface DesktopSettings {
   fullscreen: boolean;
   /** Emulators, their BIOS files and saves. Empty means the app's data folder. */
   toolsDir: string;
+  /** Closing the window keeps the app in the system tray, tracking play time and installs. */
+  closeToTray: boolean;
+  /** Download new app versions from the server and install them when the app is idle. */
+  autoUpdate: boolean;
+  /** Start with the computer (in the tray). */
+  openAtLogin: boolean;
+  /** The "still running in the tray" hint was shown once. */
+  trayHintShown: boolean;
 }
 
 export function defaultSettings(): DesktopSettings {
   const installDir = process.platform === "win32" ? "C:\\Games" : path.join(os.homedir(), "Games");
-  return { serverUrl: "", apiToken: "", installDir, libraryDirs: [installDir], keepArchives: false, fullscreen: false, toolsDir: "" };
+  return { serverUrl: "", apiToken: "", installDir, libraryDirs: [installDir], keepArchives: false, fullscreen: false, toolsDir: "", closeToTray: true, autoUpdate: true, openAtLogin: false, trayHintShown: false };
 }
 
 export class SettingsStore {

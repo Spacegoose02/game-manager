@@ -343,40 +343,83 @@ export class DownloadManager {
       .run(name, now());
   }
 
-  private async autoImportFolder(): Promise<void> {
+  /**
+   * Imports new entries of the downloads folder. Entries that belong to a download LootDen
+   * sent are left to that download's own import, so a finished game isn't taken twice (and
+   * moved out from under the other import).
+   */
+  private async autoImportFolder(claimed: Set<string>): Promise<void> {
     const s = this.settings();
     if (!s.import.folder || !s.import.autoImportFolder) return;
     for (const item of await this.folderItems().catch(() => [])) {
-      if (item.status !== "new" || item.settling) continue;
+      if (item.status !== "new" || item.settling || claimed.has(item.name)) continue;
       await this.importFromFolder(item.name).catch((err: Error) => this.log.warn({ name: item.name, err: err.message }, "Folder import failed"));
     }
   }
 
+  /** The downloads-folder entry a finished download lives in, when it's in that folder. */
+  private folderEntry(source: string): string | null {
+    const dir = this.settings().import.folder;
+    if (!dir) return null;
+    const rel = path.relative(dir, source);
+    if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return null;
+    return rel.split(/[\\/]/)[0] ?? null;
+  }
+
+  /** Where an earlier import put this download, when it already happened (from the downloads folder). */
+  private alreadyImported(source: string): string | null {
+    const entry = this.folderEntry(source) ?? path.basename(source);
+    const row = this.db.prepare("SELECT target FROM folder_imports WHERE name = ? AND status = 'imported'").get(entry) as { target: string | null } | undefined;
+    return row ? (row.target ?? "") : null;
+  }
+
   private async doReconcile(): Promise<void> {
-    await this.autoImportFolder();
-    const pending = this.rows().filter((r) => r.status === "downloading");
-    if (!pending.length) return;
-    const live = await this.liveAll();
+    const rows = this.rows();
+    const pending = rows.filter((r) => r.status === "downloading");
+    const live = rows.some((r) => r.status === "downloading" || r.status === "importing") ? await this.liveAll() : [];
     const settings = this.settings();
+    // Folder entries that belong to our own downloads; the folder auto-import leaves them alone.
+    const claimed = new Set<string>();
+    for (const r of rows) {
+      const l = r.status === "downloading" ? this.match(r, live) : null;
+      const entry = l?.path ? this.folderEntry(mapPath(l.path, settings.import.pathMappings)) : null;
+      if (entry) claimed.add(entry);
+    }
+    await this.autoImportFolder(claimed);
+    if (!pending.length) return;
     let imported = false;
     for (const r of pending) {
       const l = this.match(r, live);
       if (!l) continue;
+      const source = l.path ? mapPath(l.path, settings.import.pathMappings) : null;
+      // Moved into the library already (by hand from the downloads folder, or a run before this
+      // one): the client now reports the files missing, which isn't a failure.
+      const earlier = source ? this.alreadyImported(source) : null;
+      if (earlier !== null && !(await stat(source!).catch(() => null))) {
+        this.db.prepare("UPDATE downloads SET status = 'imported', imported_path = ?, imported_at = ?, error = NULL WHERE id = ?").run(earlier || null, now(), r.id);
+        continue;
+      }
       if (l.state === "failed") {
         this.db.prepare("UPDATE downloads SET status = 'failed', error = ? WHERE id = ?").run("The download client reported a failure", r.id);
         continue;
       }
       const finished = l.progress >= 1 && (l.state === "completed" || l.state === "seeding");
-      if (!finished || settings.import.mode === "off" || !l.path) continue;
+      if (!finished || settings.import.mode === "off" || !source) continue;
       try {
         this.db.prepare("UPDATE downloads SET status = 'importing' WHERE id = ?").run(r.id);
-        const placed = await this.importPath(mapPath(l.path, settings.import.pathMappings), settings.import.mode, r.name, settings.import.tidy, r.id, r.platform, String(r.id));
+        const placed = await this.importPath(source, settings.import.mode, r.name, settings.import.tidy, r.id, r.platform, String(r.id));
         const target = await this.afterImport(placed, r.name);
         if (!target) {
           this.db.prepare("UPDATE downloads SET status = 'failed', error = ? WHERE id = ?").run("Held for review: the virus scan flagged it", r.id);
           continue;
         }
         this.db.prepare("UPDATE downloads SET status = 'imported', imported_path = ?, imported_at = ?, error = NULL WHERE id = ?").run(target, now(), r.id);
+        // The downloads folder list shows it as imported too, instead of offering it again.
+        const entry = this.folderEntry(source);
+        if (entry)
+          this.db
+            .prepare("INSERT INTO folder_imports (name, status, target, error, at) VALUES (?, 'imported', ?, NULL, ?) ON CONFLICT(name) DO UPDATE SET status = 'imported', target = excluded.target, error = NULL, at = excluded.at")
+            .run(entry, target, now());
         this.log.info({ name: r.name, target }, "Imported download into the library");
         imported = true;
       } catch (err) {

@@ -1845,16 +1845,18 @@ button.small,
 }
 @media (max-width: 860px) {
   .settings {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 1rem;
   }
   .settings-nav {
     position: static;
+    min-width: 0;
   }
+  /* Sections wrap onto more lines instead of scrolling sideways out of reach. */
   .settings-nav nav {
     flex-direction: row;
-    overflow-x: auto;
-    scrollbar-width: none;
+    flex-wrap: wrap;
+    gap: 0.2rem 0.4rem;
   }
   .settings-nav a {
     white-space: nowrap;
@@ -2815,4 +2817,218 @@ label.field {
 }
 .cover-tile .cover-placeholder span {
   font-size: 0.8rem;
+}
+
+/* ---------- Main menu: More and the phone menu ------------------------------- */
+
+.nav {
+  position: relative;
+  flex: 1 1 auto;
+  /* Clips the hidden measuring row; the More menu lives outside the bar. */
+  overflow: hidden;
+}
+.nav-measure {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+  display: flex;
+  gap: 0.15rem;
+  left: 0;
+  top: 0;
+  white-space: nowrap;
+}
+.nav-measure a {
+  padding: 0.45em 0.7em;
+  font-weight: 600;
+}
+.nav-more {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 0.45em 0.7em;
+  white-space: nowrap;
+  border-radius: 999px;
+}
+.nav-more.active,
+.nav-more[aria-expanded="true"] {
+  color: var(--text);
+  background: var(--panel-solid);
+}
+.nav-burger {
+  display: none;
+  font-size: 1.3rem;
+  line-height: 1;
+  padding: 0.35em 0.6em;
+  border-radius: 10px;
+}
+.nav-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: clamp(1rem, 3vw, 2.5rem);
+  z-index: 30;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  padding: 0.4rem;
+  border-radius: var(--radius);
+  background: var(--panel-solid);
+  border: 1px solid var(--border);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+}
+.nav-menu a {
+  padding: 0.65em 0.9em;
+  border-radius: 10px;
+  text-decoration: none;
+  color: var(--text);
+  font-weight: 600;
+}
+.nav-menu a:hover,
+.nav-menu a.active {
+  background: var(--bg-2);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.nav-menu-fits,
+.nav-menu-signout {
+  display: none;
+}
+@media (min-width: 721px) {
+  .topbar {
+    flex-wrap: nowrap;
+  }
+}
+@media (max-width: 720px) {
+  .topbar {
+    flex-wrap: nowrap;
+    padding: 0.5rem 1rem;
+  }
+  .nav {
+    display: none;
+  }
+  .nav-burger {
+    display: inline-flex;
+    order: 5;
+  }
+  .topbar-signout {
+    display: none;
+  }
+  .nav-menu {
+    position: fixed;
+    top: 58px;
+    left: 0.75rem;
+    right: 0.75rem;
+    max-height: calc(100dvh - 70px);
+    overflow-y: auto;
+  }
+  .nav-menu .nav-menu-fits,
+  .nav-menu .nav-menu-signout {
+    display: block;
+  }
+  .nav-menu-signout {
+    text-align: left;
+    margin-top: 0.3rem;
+    border-top: 1px solid var(--border);
+    border-radius: 0;
+    padding: 0.8em 0.9em;
+  }
+}
+
+/* ---------- Desktop app options --------------------------------------------- */
+
+.app-options {
+  margin-top: 1rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 0.7rem;
+}
+.app-options h3 {
+  margin: 0;
+}
+.app-options-checks {
+  display: grid;
+  gap: 0.45rem;
+}
+.app-options .check {
+  align-items: flex-start;
+}
+.app-update-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.6rem 0.9rem;
+  margin: 0 0 1rem;
+  border-radius: var(--radius);
+  background: var(--panel-solid);
+  border: 1px solid var(--accent-2);
+}
+.app-update-banner span {
+  flex: 1 1 200px;
+}
+
+/* ---------- Phones ------------------------------------------------------------ */
+
+:root[data-touch="on"] .nav-measure a,
+:root[data-touch="on"] .nav-more {
+  padding: 0.75em 1.2em;
+}
+@media (max-width: 720px) {
+  /* Two covers a row, in touch mode too (its bigger tiles left one per row). */
+  .grid,
+  :root[data-touch="on"] .grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 0.5rem;
+  }
+  .grid-compact,
+  :root[data-touch="on"] .grid-compact {
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 0.3rem;
+  }
+  .cover-wall {
+    grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  }
+  .play-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 0.6rem;
+  }
+  .play-card-actions button,
+  .play-card-actions .button {
+    flex: 1 1 100%;
+  }
+  /* Tabs and segmented choices wrap instead of hiding off the edge. */
+  .tabs,
+  .segmented.library-tabs,
+  .view-picker .segmented {
+    flex-wrap: wrap;
+  }
+  .segmented.library-tabs {
+    border-radius: 18px;
+  }
+  .filters {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .filters > input[type="search"],
+  .filters > .view-picker,
+  .filters > .segmented {
+    grid-column: 1 / -1;
+  }
+  .filters > * {
+    min-width: 0;
+  }
+  .filters select {
+    width: 100%;
+  }
+  .view-picker {
+    margin-left: 0;
+    justify-content: space-between;
+  }
+  .dl-summary {
+    gap: 1rem;
+  }
+  .dl-big {
+    font-size: 1.2rem;
+  }
 }

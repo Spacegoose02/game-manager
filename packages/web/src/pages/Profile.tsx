@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AppOptions } from "../components/AppOptions";
 import { Link } from "react-router-dom";
 import type { ApiTokenInfo, GameSummary, UserGameState } from "@lootden/shared";
 import { api, avatarUrl, formatPlaytime } from "../api";
@@ -221,6 +222,7 @@ function ThisComputer() {
         ))}
       </ul>
       {installed.length === 0 && <p className="muted">No games installed on this computer yet.</p>}
+      <AppOptions />
     </section>
   );
 }

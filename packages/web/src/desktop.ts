@@ -54,7 +54,28 @@ export type Progress =
   | { gameId: string; type: "playing" }
   | { gameId: string; type: "stopped"; seconds: number }
   | { gameId: string; type: "saves"; backupId?: number; size?: number; error?: string }
-  | { gameId: string; type: "prepare"; message: string; done?: boolean; error?: boolean; newId?: string };
+  | { gameId: string; type: "prepare"; message: string; done?: boolean; error?: boolean; newId?: string }
+  | ({ gameId: "lootden-app"; type: "appUpdate" } & AppUpdate);
+
+/** The desktop app's own updates, from the server's Get the app page. */
+export interface AppUpdate {
+  current: string;
+  kind?: "installer" | "portable" | "appimage" | "other";
+  state: "idle" | "checking" | "none" | "available" | "downloading" | "ready" | "error" | "unsupported";
+  version?: string;
+  received?: number;
+  total?: number;
+  error?: string;
+  checkedAt?: string;
+}
+
+export interface AppSettings {
+  closeToTray: boolean;
+  autoUpdate: boolean;
+  openAtLogin: boolean;
+  trayAvailable: boolean;
+  loginItemSupported: boolean;
+}
 
 /** Bridge the desktop app injects (packages/desktop/src/preload.ts). Absent in a normal browser. */
 export interface DesktopBridge {
@@ -92,6 +113,11 @@ export interface DesktopBridge {
   openTools?(): Promise<void>;
   changeServer(): Promise<void>;
   toggleFullscreen(): Promise<boolean>;
+  /** Tray, start-up and update options (missing in apps before 0.9.1). */
+  appSettings?(patch?: Partial<Pick<AppSettings, "closeToTray" | "autoUpdate" | "openAtLogin">>): Promise<AppSettings>;
+  appUpdate?(action?: "status" | "check" | "install"): Promise<AppUpdate>;
+  /** Quits the app for real (closing the window only hides it to the tray). */
+  quit?(): Promise<void>;
   onProgress(cb: (p: Progress) => void): () => void;
 }
 

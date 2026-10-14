@@ -138,13 +138,14 @@ describe("custom artwork", () => {
 
 describe("client downloads", () => {
   it("hosts uploaded app files and fetches a GitHub release", async () => {
+    let tag = "v0.3.0";
     const f = fake((url) => {
       if (url.host === "api.github.com")
         return {
           body: {
-            tag_name: "v0.3.0",
+            tag_name: tag,
             assets: [
-              { name: "LootDen-0.3.0-win-x64.exe", browser_download_url: "https://github.com/dl/win.exe" },
+              { name: tag === "v0.3.0" ? "LootDen-0.3.0-win-x64.exe" : "LootDen-Setup-0.4.0.exe", browser_download_url: "https://github.com/dl/win.exe" },
               { name: "LootDen-0.3.0-linux-x86_64.AppImage", browser_download_url: "https://github.com/dl/linux.AppImage" },
               { name: "checksums.txt", browser_download_url: "https://github.com/dl/sums" },
             ],
@@ -181,6 +182,15 @@ describe("client downloads", () => {
     const dl = await app.inject({ url: "/api/clients/gm.exe", headers: asUser });
     assert.equal(dl.body, "MZ-binary");
     assert.equal((await app.inject({ url: "/api/clients/..%2F..%2Fgame-manager.db", headers: asUser })).statusCode, 400);
+
+    // The server keeps following that repository, so desktop apps can update from it.
+    assert.equal((await app.inject({ url: "/api/clients/source", headers: asUser })).json().tag, "v0.3.0");
+    assert.equal(await ctx.clients.refresh(), null, "nothing new");
+    tag = "v0.4.0";
+    assert.equal(await ctx.clients.refresh(), "v0.4.0");
+    const names = (await app.inject({ url: "/api/clients", headers: asUser })).json().map((c: { name: string }) => c.name);
+    assert.ok(names.includes("LootDen-Setup-0.4.0.exe"));
+    assert.equal((await app.inject({ url: "/api/clients/source", headers: asUser })).json().repo, "someone/lootden");
     await app.close();
   });
 });

@@ -17,7 +17,11 @@ export function AdminApps({ onMessage }: { onMessage: (m: string) => void }) {
   });
   const [busy, setBusy] = useState("");
   const input = useRef<HTMLInputElement>(null);
-  const load = () => api.clients().then(setFiles, (e: Error) => onMessage(e.message));
+  const [source, setSource] = useState<Awaited<ReturnType<typeof api.clientSource>>>(null);
+  const load = () => {
+    api.clientSource().then(setSource, () => {});
+    return api.clients().then(setFiles, (e: Error) => onMessage(e.message));
+  };
   useEffect(() => {
     void load();
   }, []);
@@ -40,6 +44,11 @@ export function AdminApps({ onMessage }: { onMessage: (m: string) => void }) {
       <p className="muted small">
         Files here show on the <a href="/apps">Get the app</a> page for everyone. They live in <code>/data/clients</code>, so you can also copy them
         there directly.
+      </p>
+      <p className="muted small">
+        {source
+          ? `From ${source.repo} ${source.tag}. Newer releases are fetched by themselves (last checked ${new Date(source.checkedAt ?? source.fetchedAt).toLocaleString()}), and the desktop apps update from here.`
+          : "Once you get a release from GitHub, newer ones are fetched by themselves and the desktop apps update from here."}
       </p>
       <div className="inline">
         <input placeholder={`GitHub repository, e.g. ${OFFICIAL_REPO}`} value={repo} onChange={(e) => setRepo(e.target.value)} style={{ flex: 1 }} />

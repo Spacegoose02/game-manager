@@ -88,7 +88,7 @@ export function buildContext(config: ServerConfig, db: Db, log: Log, opts: Build
     library,
     users,
     integrations,
-    clients: new ClientDownloads(config.dataDir, opts.fetchImpl),
+    clients: new ClientDownloads(config.dataDir, opts.fetchImpl, db),
     saves: new SaveStore(db, config.dataDir),
     bios: new BiosStore(db, config.dataDir),
     updates,

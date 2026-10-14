@@ -32,6 +32,9 @@ const bridge = {
   openFolder: (gameId: string) => ipcRenderer.invoke("gm:openFolder", gameId),
   changeServer: () => ipcRenderer.invoke("gm:changeServer"),
   toggleFullscreen: () => ipcRenderer.invoke("gm:toggleFullscreen"),
+  appSettings: (patch?: object) => ipcRenderer.invoke("gm:appSettings", patch),
+  appUpdate: (action?: "status" | "check" | "install") => ipcRenderer.invoke("gm:appUpdate", action),
+  quit: () => ipcRenderer.invoke("gm:quit"),
   onProgress: (cb: (p: unknown) => void) => {
     const listener = (_e: unknown, p: unknown) => cb(p);
     ipcRenderer.on("gm:progress", listener);
