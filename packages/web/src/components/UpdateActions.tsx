@@ -4,6 +4,27 @@ import { compareVersion, type GameSummary } from "@lootden/shared";
 import { formatBytes } from "../api";
 import { bridgeError, desktop, type InstalledGame, type Progress } from "../desktop";
 
+const REASON_LABEL = { admin: "set by admin", folder: "folder", name: "name", size: "size", content: "files" } as const;
+
+/**
+ * What LootDen decided an entry is and why: "Update · name", "Full game · size". The full
+ * reason ("64 GB, 98% of Cyberpunk 2077") is in the tooltip and, with detail, beside it.
+ */
+export function KindBadge({ game, detail = false }: { game: Pick<GameSummary, "kind" | "kindReason">; detail?: boolean }) {
+  const r = game.kindReason;
+  if (!r) return null;
+  const label = game.kind === "dlc" ? "DLC" : game.kind === "update" ? "Update" : "Full game";
+  return (
+    <span className="kind-reason">
+      <span className={`badge kind-${game.kind} conf-${r.confidence}`} title={`${r.note} (${r.confidence} confidence)`}>
+        {label} · {REASON_LABEL[r.by]}
+        {r.confidence === "low" ? " ?" : ""}
+      </span>
+      {detail && <span className="muted small">{r.note.replace(/^[^:]+:\s*/, "")}</span>}
+    </span>
+  );
+}
+
 /** "v1.2 → v1.3", "v1.3" or "" for an update or DLC. */
 export function versionLabel(u: Pick<GameSummary, "version" | "fromVersion">): string {
   if (u.fromVersion && u.version) return `v${u.fromVersion} → v${u.version}`;

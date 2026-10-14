@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, rename, statfs } from "node:fs/promises";
 import path from "node:path";
-import { compareVersion, PC_PLATFORM, PLATFORMS, type ControllerSupport, type GameDetail, type GameMetadata, type GameSummary, type LibraryStats, type PackageKind } from "@lootden/shared";
+import { compareVersion, contentHint, FULL_GAME_SIZE_RATIO, PC_PLATFORM, setupKindOf, type KindReason, PLATFORMS, type ControllerSupport, type GameDetail, type GameMetadata, type GameSummary, type LibraryStats, type PackageKind } from "@lootden/shared";
 import { json, now, type Db } from "../db/database.js";
 import { kidSafeFromRatings } from "../metadata/ratings.js";
 import { cleanTitle, titleSimilarity } from "../metadata/titles.js";
@@ -22,6 +22,26 @@ export interface GameQuery {
   order?: "asc" | "desc";
   limit?: number;
 }
+
+/** What one entry turned out to be. */
+interface PackageVerdict {
+  kind: PackageKind;
+  baseGameId: string | null;
+  /** A full game that was named as an update: the library game it's a copy of, for its art and name. */
+  lookalike: string | null;
+  reason: KindReason | null;
+}
+
+const formatSize = (bytes: number) => {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let n = bytes;
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i++;
+  }
+  return `${n >= 10 || i === 0 ? Math.round(n) : n.toFixed(1)} ${units[i]}`;
+};
 
 interface GameRow {
   id: string;
@@ -87,8 +107,8 @@ export class Library {
   private lastScanMs: number | null = null;
   private scanning: Promise<void> | null = null;
   private listeners: Array<(games: ScannedGame[]) => void> = [];
-  /** Which game each update or DLC belongs to; rebuilt after scans, overrides and metadata changes (and at most every few seconds). */
-  private baseCache: { at: number; map: Map<string, string | null> } | null = null;
+  /** What each entry is and which game each update or DLC belongs to; rebuilt after scans, overrides and metadata changes (and at most every few seconds). */
+  private baseCache: { at: number; map: Map<string, PackageVerdict> } | null = null;
 
   constructor(
     private readonly db: Db,
@@ -157,21 +177,23 @@ export class Library {
     return { games, meta };
   }
 
-  /** What an entry is: the admin's correction, else what its name says. */
-  private kindOf(g: ScannedGame, row: Pick<GameRow, "kind_override"> | undefined): PackageKind {
-    const k = row?.kind_override;
-    return k === "game" || k === "update" || k === "dlc" ? k : g.kind;
-  }
-
   /**
-   * Matches every update and DLC to its game: the admin's choice, else the library game whose
-   * name best matches the package's ("Cyberpunk 2077 Update v2.1" belongs to "Cyberpunk 2077").
+   * Decides what every entry is and matches each update and DLC to its game.
+   * - An admin's choice always wins.
+   * - Otherwise the name or folder says update or DLC, and the package is matched to the library
+   *   game whose name fits best ("Cyberpunk 2077 Update v2.1" belongs to "Cyberpunk 2077").
+   * - A package about as big as that game, or whose files are a full installer, is the full game
+   *   whatever it's called, and goes back in the library.
    */
-  private bases(): Map<string, string | null> {
+  private packages(): Map<string, PackageVerdict> {
     if (this.baseCache && Date.now() - this.baseCache.at < 5000) return this.baseCache.map;
     const { games: rows, meta } = this.rows();
     const all = [...this.scanned.values()];
-    const games = all.filter((g) => this.kindOf(g, rows.get(g.id)) === "game");
+    const adminKind = (id: string): PackageKind | null => {
+      const k = rows.get(id)?.kind_override;
+      return k === "game" || k === "update" || k === "dlc" ? k : null;
+    };
+    const games = all.filter((g) => (adminKind(g.id) ?? g.kind) === "game");
     const names = new Map(
       games.map((g) => {
         const row = rows.get(g.id);
@@ -179,40 +201,78 @@ export class Library {
         return [g.id, [...shown, cleanTitle(path.posix.basename(g.source)).query]];
       }),
     );
-    const map = new Map<string, string | null>();
+    const match = (p: ScannedGame): ScannedGame | null => {
+      const want = cleanTitle(p.baseTitle).query;
+      let best: { g: ScannedGame; score: number } | null = null;
+      for (const g of games) {
+        if (g.platform !== p.platform || g.id === p.id) continue;
+        const score = Math.max(...names.get(g.id)!.map((n) => titleSimilarity(want, n)));
+        if (score >= 0.8 && (!best || score > best.score)) best = { g, score };
+      }
+      return best?.g ?? null;
+    };
+    const titleOf = (g: ScannedGame) => rows.get(g.id)?.title_override || meta.get(g.id)?.name || g.title;
+
+    const map = new Map<string, PackageVerdict>();
     for (const p of all) {
       const row = rows.get(p.id);
-      if (this.kindOf(p, row) === "game") continue;
-      const chosen = row?.base_game_override;
-      if (chosen) {
-        map.set(p.id, chosen !== "none" && this.scanned.has(chosen) ? chosen : null);
+      const admin = adminKind(p.id);
+      if (admin) {
+        const chosen = row?.base_game_override;
+        const base = admin === "game" ? null : chosen ? (chosen !== "none" && this.scanned.has(chosen) ? chosen : null) : (match(p)?.id ?? null);
+        map.set(p.id, { kind: admin, baseGameId: base, lookalike: null, reason: p.kind === admin && admin === "game" ? null : { by: "admin", confidence: "high", note: "Set by an admin" } });
         continue;
       }
-      const want = cleanTitle(p.baseTitle).query;
-      let best: { id: string; score: number } | null = null;
-      for (const g of games) {
-        if (g.platform !== p.platform) continue;
-        const score = Math.max(...names.get(g.id)!.map((n) => titleSimilarity(want, n)));
-        if (score >= 0.8 && (!best || score > best.score)) best = { id: g.id, score };
+      if (p.kind === "game") {
+        map.set(p.id, { kind: "game", baseGameId: null, lookalike: null, reason: null });
+        continue;
       }
-      map.set(p.id, best?.id ?? null);
+      const chosen = row?.base_game_override;
+      const base = chosen ? (chosen !== "none" ? (this.scanned.get(chosen) ?? null) : null) : match(p);
+      const hint = contentHint(p.files);
+      const ratio = base && base.sizeBytes > 0 ? p.sizeBytes / base.sizeBytes : null;
+      const share = ratio != null && base ? `${formatSize(p.sizeBytes)}, ${ratio < 0.01 ? "under 1%" : `${Math.round(ratio * 100)}%`} of ${titleOf(base)}` : formatSize(p.sizeBytes);
+      // "v1.5 to v1.6" is a patch's name; it takes a near-identical size to say otherwise.
+      const fullBySize = ratio != null && ratio >= (p.fromVersion ? 0.9 : FULL_GAME_SIZE_RATIO) && hint?.says !== "patch";
+      if (fullBySize) {
+        map.set(p.id, { kind: "game", baseGameId: null, lookalike: base!.id, reason: { by: "size", confidence: hint?.says === "full" || ratio! >= 0.9 ? "high" : "medium", note: `Full game: ${share}` } });
+        continue;
+      }
+      if (hint?.says === "full" && p.kind === "update") {
+        map.set(p.id, { kind: "game", baseGameId: null, lookalike: base?.id ?? null, reason: { by: "content", confidence: "medium", note: `Full game: ${hint.why}` } });
+        continue;
+      }
+      const inFolder = /^(updates|patches|dlcs?)\//i.test(p.source);
+      const label = p.kind === "dlc" ? "DLC" : "Update";
+      const confidence = hint?.says === "patch" || (ratio != null && ratio < 0.3) ? "high" : ratio == null ? "low" : "medium";
+      const why = hint?.says === "patch" ? hint.why : inFolder ? `in the ${p.source.split("/")[0]} folder` : "named as one";
+      map.set(p.id, {
+        kind: p.kind,
+        baseGameId: base?.id ?? null,
+        lookalike: null,
+        reason: { by: hint?.says === "patch" ? "content" : inFolder ? "folder" : "name", confidence, note: `${label}: ${why} · ${share}` },
+      });
     }
     this.baseCache = { at: Date.now(), map };
     return map;
   }
 
+  private verdict(g: ScannedGame): PackageVerdict {
+    return this.packages().get(g.id) ?? { kind: g.kind, baseGameId: null, lookalike: null, reason: null };
+  }
+
   private view(g: ScannedGame, row: GameRow | undefined, metaRow: MetadataRow | undefined): GameDetail {
     const metadata = metaRow ? metadataFromRow(metaRow) : null;
-    const kind = this.kindOf(g, row);
-    const baseGameId = kind === "game" ? null : (this.bases().get(g.id) ?? null);
-    const baseGame = baseGameId ? this.get(baseGameId, false) : undefined;
+    const { kind, baseGameId, lookalike, reason } = this.verdict(g);
+    // Updates and DLC, and full games that were named as updates, borrow their game's art and name.
+    const baseGame = baseGameId || lookalike ? this.get((baseGameId ?? lookalike)!, false) : undefined;
     const ownCover = imageUrl(g.id, "cover", row?.cover_override ?? metadata?.coverUrl ?? (metadata?.steamAppId ? "steam" : null) ?? metadata?.screenshots[0] ?? null);
     const ownKidSafe =
       row?.kid_safe_override != null ? row.kid_safe_override === 1 : metadata ? kidSafeFromRatings(metadata.ageRatings) : null;
     const { files, entryModifiedAt, ...base } = g;
     return {
       ...base,
-      title: row?.title_override || metadata?.name || g.title,
+      title: row?.title_override || metadata?.name || (lookalike ? `${g.baseTitle}${g.version ? ` v${g.version}` : ""}` : g.title),
       // "Recently added" follows the folder's Date modified, like sorting the games folder in Explorer.
       addedAt: entryModifiedAt ?? row?.added_at ?? new Date(0).toISOString(),
       // Updates and DLC show their game's art unless they have their own.
@@ -228,6 +288,9 @@ export class Library {
       version: g.version,
       fromVersion: kind === "update" ? g.fromVersion : null,
       baseGameId,
+      kindReason: reason,
+      // A full game named as an update was skipped by the scanner's setup check.
+      needsSetup: kind !== "game" ? null : (g.needsSetup ?? (g.kind !== "game" && g.platform === PC_PLATFORM ? setupKindOf(files) : null)),
       files,
       metadata,
       overrides: {
@@ -285,7 +348,7 @@ export class Library {
     const genre = query.genre?.toLowerCase();
     let out: GameSummary[] = [];
     for (const g of this.scanned.values()) {
-      const kind = this.kindOf(g, games.get(g.id));
+      const { kind } = this.verdict(g);
       const want = query.kind ?? "game";
       if (want !== "all" && (want === "addon" ? kind === "game" : kind !== want)) continue;
       const { files: _f, metadata: _m, overrides: _o, backgroundUrl: _b, savePath: _s, addons: _a, baseGame: _g, packageOverrides: _p, ...summary } = this.view(g, games.get(g.id), meta.get(g.id));

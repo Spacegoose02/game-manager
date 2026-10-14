@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import type { GameSummary } from "@lootden/shared";
 import { api, formatBytes } from "../api";
 import { Cover } from "../components/Cover";
-import { UpdateActions, useInstalled, versionLabel, versionProblem } from "../components/UpdateActions";
+import { KindBadge, UpdateActions, useInstalled, versionLabel, versionProblem } from "../components/UpdateActions";
 
 type Filter = "all" | "ready" | "updates" | "dlc" | "only";
 
@@ -48,6 +48,7 @@ export function Updates() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addons, filter, installed, games]);
 
+  const moved = [...games.values()].filter((g) => g.kindReason && (g.kindReason.by === "size" || g.kindReason.by === "content"));
   if (error) return <p className="error">{error}</p>;
   if (!addons) return <p className="muted">Loading…</p>;
   const count = (f: Filter) => addons.filter((u) => (f === "ready" ? ready(u) : f === "updates" ? u.kind === "update" : f === "dlc" ? u.kind === "dlc" : f === "only" ? !u.baseGameId : true)).length;
@@ -84,6 +85,23 @@ export function Updates() {
       )}
       {addons.length > 0 && !groups.length && <p className="muted">Nothing here.</p>}
 
+      {moved.length > 0 && filter === "all" && (
+        <article className="panel pkg-group">
+          <h2>Full games named as updates</h2>
+          <p className="muted small">These are as big as their game, or hold a full installer, so they're in the library as games. An admin can change that from their page.</p>
+          <ul className="pkg-list">
+            {moved.map((g) => (
+              <li key={g.id}>
+                <div className="pkg-title">
+                  <Link to={`/games/${g.id}`}>{g.title}</Link>
+                  <KindBadge game={g} detail />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </article>
+      )}
+
       {groups.map(([baseId, items]) => {
         const base = baseId ? games.get(baseId) : undefined;
         const local = installed?.find((g) => g.gameId === baseId);
@@ -113,7 +131,7 @@ export function Updates() {
                 <li key={u.id}>
                   <div className="pkg-title">
                     <Link to={`/games/${u.id}`}>{u.title}</Link>
-                    <span className="badge badge-muted">{u.kind === "dlc" ? "DLC" : "Update"}</span>
+                    <KindBadge game={u} />
                     {versionLabel(u) && <span className="muted small">{versionLabel(u)}</span>}
                     <span className="muted small">{formatBytes(u.sizeBytes)}</span>
                   </div>

@@ -66,3 +66,39 @@ export function compareVersion(a: string, b: string): number {
   }
   return 0;
 }
+
+/** Why LootDen thinks an entry is a full game, an update or DLC, for the badge beside it. */
+export interface KindReason {
+  /**
+   * - "admin": set by an admin.
+   * - "folder": it's in an Updates or DLC folder.
+   * - "name": its name says update or DLC.
+   * - "size": it's about as big as its game, so it's the full game whatever its name says.
+   * - "content": its files look like a full installer, or like a patch.
+   */
+  by: "admin" | "folder" | "name" | "size" | "content";
+  /** "high" when name, size and files agree; "low" when there was little to go on. */
+  confidence: "high" | "medium" | "low";
+  /** One line for people: "64.2 GB, 98% of Cyberpunk 2077". */
+  note: string;
+}
+
+/** A package this size or bigger, next to its game's size, is a full copy of the game. */
+export const FULL_GAME_SIZE_RATIO = 0.7;
+
+const DELTA_FILE = /\.(xdelta3?|vcdiff|bsdiff|bps|ups|ppf|delta)$/i;
+const PATCHER_EXE = /(^|[/_ .-])(patch|update|hotfix)[^/]*\.exe$/i;
+/** GOG-style full installers: setup_game_1.2_(1234).exe with setup_game_1.2_(1234)-1.bin beside it. */
+const FULL_INSTALLER_PART = /(^|\/)setup_[^/]+-\d+\.bin$/i;
+/** Repacks and full installs carry the game's redistributables; patches don't. */
+const REDIST = /(^|\/)(_commonredist|redist|redistributables?|directx|__installer)\//i;
+
+/** What a package's files say it is: a full game, a patch, or nothing either way. */
+export function contentHint(files: Array<{ path: string }>): { says: "full" | "patch"; why: string } | null {
+  const names = files.map((f) => f.path.replace(/\\/g, "/"));
+  if (names.some((n) => DELTA_FILE.test(n))) return { says: "patch", why: "has patch delta files" };
+  if (names.some((n) => FULL_INSTALLER_PART.test(n))) return { says: "full", why: "has a full installer with data files" };
+  if (names.some((n) => REDIST.test(n))) return { says: "full", why: "includes the game's redistributables" };
+  if (names.length <= 3 && names.some((n) => PATCHER_EXE.test(n))) return { says: "patch", why: "is a patch program" };
+  return null;
+}

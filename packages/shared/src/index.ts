@@ -3,7 +3,7 @@
 
 export * from "./emulators.js";
 export * from "./packages.js";
-import type { PackageKind } from "./packages.js";
+import type { KindReason, PackageKind } from "./packages.js";
 export * from "./platforms.js";
 
 export const API_VERSION = 1;
@@ -70,6 +70,8 @@ export interface GameSummary {
   fromVersion: string | null;
   /** Updates and DLC: the library game they belong to; null when that game isn't on the server. */
   baseGameId: string | null;
+  /** Why it counts as this kind; null for an ordinary game. */
+  kindReason: KindReason | null;
 }
 
 export interface GameMetadata {

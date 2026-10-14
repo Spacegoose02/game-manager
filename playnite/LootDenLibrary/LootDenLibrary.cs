@@ -37,6 +37,15 @@ namespace LootDenLibrary
             }
             var games = api.Games().GetAwaiter().GetResult();
             var installed = Installs.OnThisPc(api.MyGames().GetAwaiter().GetResult());
+            try
+            {
+                var moved = PlatformMap.FixExisting(PlayniteApi, Id, games);
+                if (moved > 0) logger.Info($"LootDen: moved {moved} games to their own platform");
+            }
+            catch (Exception e)
+            {
+                logger.Warn(e, "LootDen: updating platforms of existing games failed");
+            }
             return games.Select(g =>
             {
                 installed.TryGetValue(g.id, out var dir);
@@ -45,7 +54,7 @@ namespace LootDenLibrary
                     GameId = g.id,
                     Name = g.title,
                     Source = new MetadataNameProperty("LootDen"),
-                    Platforms = new HashSet<MetadataProperty> { new MetadataSpecProperty("pc_windows") },
+                    Platforms = new HashSet<MetadataProperty> { PlatformMap.For(g.platform) },
                     Genres = g.genres == null ? null : new HashSet<MetadataProperty>(g.genres.Select(x => new MetadataNameProperty(x))),
                     ReleaseDate = g.releaseYear.HasValue ? new ReleaseDate(g.releaseYear.Value) : (ReleaseDate?)null,
                     CommunityScore = g.rating,

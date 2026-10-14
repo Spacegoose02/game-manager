@@ -423,6 +423,7 @@ export const api = {
 
   home: () => call<HomeData>("GET", "/api/home"),
   games: (f: GameFilters = {}) => call<GameSummary[]>("GET", `/api/games${qs({ ...f })}`),
+  platforms: () => call<Array<{ id: string; count: number; sizeBytes: number }>>("GET", "/api/platforms"),
   genres: (platform?: string) => call<Array<{ name: string; count: number }>>("GET", `/api/genres${qs({ platform })}`),
   freeGames: () => call<{ games: FreeGame[]; errors: Array<{ store: string; message: string }>; itchConnected: boolean }>("GET", "/api/discover/free"),
   addItchGame: (url: string) => call<{ folder: string }>("POST", "/api/discover/free/itch", { url }),

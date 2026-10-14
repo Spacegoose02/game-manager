@@ -12,7 +12,7 @@ import { UpdatesPanel } from "../components/UpdatesPanel";
 import { PreparePanel } from "../components/PreparePanel";
 import { JournalPanel, ModsPanel, VersionBanner } from "../components/GameExtras";
 import { desktop } from "../desktop";
-import { UpdateActions, useInstalled, versionLabel } from "../components/UpdateActions";
+import { KindBadge, UpdateActions, useInstalled, versionLabel } from "../components/UpdateActions";
 import type { GameSummary } from "@lootden/shared";
 
 export function GameDetail() {
@@ -47,7 +47,7 @@ export function GameDetail() {
           </p>
           {isAddon && (
             <p className="pkg-for">
-              <span className="badge badge-muted">{game.kind === "dlc" ? "DLC" : "Update"}</span>{" "}
+              {game.kindReason ? <KindBadge game={game} /> : <span className="badge badge-muted">{game.kind === "dlc" ? "DLC" : "Update"}</span>}{" "}
               {game.baseGame ? (
                 <>
                   for <Link to={`/games/${game.baseGame.id}`}>{game.baseGame.title}</Link>
@@ -56,6 +56,12 @@ export function GameDetail() {
                 "Update only: its game isn't on the server"
               )}
               {versionLabel(game) && <span className="muted"> · {versionLabel(game)}</span>}
+              {game.kindReason && <span className="muted small"> · {game.kindReason.note.replace(/^[^:]+:\s*/, "")}</span>}
+            </p>
+          )}
+          {!isAddon && game.kindReason && (
+            <p className="pkg-for">
+              <KindBadge game={game} detail />
             </p>
           )}
           <Badges game={game} />
@@ -146,7 +152,7 @@ export function GameDetail() {
               <li key={u.id}>
                 <div className="pkg-title">
                   <Link to={`/games/${u.id}`}>{u.title}</Link>
-                  <span className="badge badge-muted">{u.kind === "dlc" ? "DLC" : "Update"}</span>
+                  <KindBadge game={u} />
                   {versionLabel(u) && <span className="muted small">{versionLabel(u)}</span>}
                   <span className="muted small">{formatBytes(u.sizeBytes)}</span>
                 </div>
@@ -289,7 +295,8 @@ function PackageAdmin({ game, onChange }: { game: Game; onChange: (g: Game) => v
     <section className="panel">
       <h2>Game, update or DLC</h2>
       <p className="muted small">
-        Worked out from the name{auto ? "" : " (changed by an admin)"}. Updates and DLC are kept out of the library, listed under Updates, and applied over the installed game.
+        {auto ? `Worked out from its ${game.kindReason ? { admin: "name", folder: "folder", name: "name", size: "size next to its game", content: "files" }[game.kindReason.by] : "name"}` : "Changed by an admin"}
+        {game.kindReason && auto ? ` (${game.kindReason.note})` : ""}. Updates and DLC are kept out of the library, listed under Updates, and applied over the installed game.
       </p>
       <div className="inline">
         <label>

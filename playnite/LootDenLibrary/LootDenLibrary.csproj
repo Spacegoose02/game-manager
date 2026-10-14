@@ -6,7 +6,7 @@
     <LangVersion>8.0</LangVersion>
     <AssemblyName>LootDenLibrary</AssemblyName>
     <RootNamespace>LootDenLibrary</RootNamespace>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
   <ItemGroup>

@@ -26,6 +26,8 @@ describe("applying updates to an installed game", () => {
     await mkdir(path.join(games, "Hades v1.0", "content"), { recursive: true });
     await writeFile(path.join(games, "Hades v1.0", "Hades.exe"), "old exe");
     await writeFile(path.join(games, "Hades v1.0", "content", "a.txt"), "a1");
+    // The game is much bigger than its updates, or they'd be taken for full copies of it.
+    await writeFile(path.join(games, "Hades v1.0", "content", "big.pak"), "x".repeat(10_000));
     // The update is wrapped in its own folder, as patches often are.
     const patch = path.join(work, "src", "Hades Update v1.1");
     await mkdir(path.join(patch, "content"), { recursive: true });

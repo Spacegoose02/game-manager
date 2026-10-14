@@ -85,6 +85,20 @@ fix a wrong match on the update's page (**Game, update or DLC**): pick the right
 there isn't one, or turn a misread entry back into a full game. One whose game isn't on the
 server shows as **Update only** and can't be installed by itself.
 
+**Full games with update names.** Some downloads are called "Update" but are really the whole
+game (a newer full copy). LootDen checks each package against its game:
+
+- **Size:** a package at least 70% the size of its game is a full game (90% when the name says
+  "v1.5 to v1.6"). It goes back in the library as `Game v2.1`, with the game's art.
+- **Files:** a full installer (`setup_game-1.bin` parts) or bundled redistributables
+  (`_CommonRedist`, `DirectX`) mean a full game; patch delta files (`.xdelta`, `.vcdiff`) or a
+  lone `patch_*.exe` mean an update, whatever the size.
+
+Every update, DLC and reclassified game carries a badge saying why ("Update · folder",
+"Full game · size") with the detail in its tooltip; a dashed badge means there was little to go
+on. The Updates page lists the ones moved back to the library. An admin's choice on the
+package's page always wins.
+
 **Applying one (desktop app):** an update's **Apply update** button (DLC: **Add to game**)
 appears once its game is installed on that PC. The app downloads it, then:
 

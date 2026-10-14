@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import type { GameSummary } from "@lootden/shared";
+import { platformFor, type GameSummary, type UserGameState } from "@lootden/shared";
 import { api } from "../api";
-import { GameGrid } from "../components/GameCard";
+import { desktop } from "../desktop";
+import { InstalledGames } from "../components/InstalledGames";
+import { GameCollection, useViewPrefs, ViewPicker } from "../components/LibraryLayout";
 import { Backlog, Stats } from "../components/LibraryViews";
 
 const SORTS = [
@@ -11,6 +13,7 @@ const SORTS = [
   ["release", "Release year"],
   ["rating", "Rating"],
   ["size", "Size"],
+  ["played", "Recently played"],
 ] as const;
 
 export function Library() {
@@ -23,6 +26,7 @@ export function Library() {
         {(
           [
             ["all", "All games"],
+            ["installed", desktop ? "Installed" : "My installs"],
             ["backlog", "Backlog"],
             ["stats", "Stats"],
           ] as const
@@ -32,7 +36,7 @@ export function Library() {
           </button>
         ))}
       </div>
-      {tab === "backlog" ? <Backlog /> : tab === "stats" ? <Stats /> : <AllGames />}
+      {tab === "installed" ? <InstalledGames /> : tab === "backlog" ? <Backlog /> : tab === "stats" ? <Stats /> : <AllGames />}
     </>
   );
 }
@@ -47,6 +51,13 @@ function AllGames() {
   const controller = params.get("controller") ?? "";
   const kidSafe = params.get("kidSafe") === "true";
   const sort = params.get("sort") ?? "title";
+  const system = params.get("system") ?? "pc";
+  const onlyInstalled = params.get("installed") === "true";
+  const [prefs, setPrefs] = useViewPrefs("library");
+  const [platforms, setPlatforms] = useState<Array<{ id: string; count: number }>>([]);
+  // What's installed: this PC's copies in the app, else installs on any of this person's devices.
+  const [installedIds, setInstalledIds] = useState<Set<string>>(new Set());
+  const [states, setStates] = useState<UserGameState[]>([]);
 
   const set = (key: string, value: string) => {
     const next = new URLSearchParams(params);
@@ -56,25 +67,61 @@ function AllGames() {
   };
 
   useEffect(() => {
-    api.genres("pc").then(setGenres, () => {});
+    api.genres(system === "all" ? undefined : system).then(setGenres, () => {});
+  }, [system]);
+  useEffect(() => {
+    api.platforms().then(setPlatforms, () => {});
+    api.myGames().then(
+      (s) => {
+        setStates(s);
+        if (!desktop) setInstalledIds(new Set(s.filter((x) => x.installedAt && !x.uninstalledAt).map((x) => x.gameId)));
+      },
+      () => {},
+    );
+    if (desktop) void desktop.installed().then((l) => setInstalledIds(new Set(l.map((g) => g.gameId))), () => {});
   }, []);
   useEffect(() => {
     const t = setTimeout(() => {
       const desc = sort === "added" || sort === "rating" || sort === "release" || sort === "size";
       api
-        .games({ search, genre, controller, kidSafe, platform: "pc", sort, order: desc ? "desc" : "asc" })
+        .games({ search, genre, controller, kidSafe, platform: system === "all" ? undefined : system, sort: sort === "played" ? "title" : sort, order: desc ? "desc" : "asc" })
         .then((g) => {
           setGames(g);
           setError("");
         }, (e: Error) => setError(e.message));
     }, 200);
     return () => clearTimeout(t);
-  }, [search, genre, controller, kidSafe, sort]);
+  }, [search, genre, controller, kidSafe, sort, system]);
+
+  const shown = useMemo(() => {
+    if (!games) return null;
+    let out = onlyInstalled ? games.filter((g) => installedIds.has(g.id)) : games;
+    if (sort === "played") {
+      const last = new Map<string, string>();
+      for (const s of states) if (s.lastPlayedAt && (last.get(s.gameId) ?? "") < s.lastPlayedAt) last.set(s.gameId, s.lastPlayedAt);
+      out = [...out].sort((a, b) => (last.get(b.id) ?? "").localeCompare(last.get(a.id) ?? "") || a.title.localeCompare(b.title));
+    }
+    return out;
+  }, [games, onlyInstalled, installedIds, sort, states]);
+  const shelf = system !== "all" && system !== "pc" ? platformFor(system).coverAspect : undefined;
 
   return (
     <>
       <div className="filters panel">
         <input type="search" placeholder="Search games" value={search} onChange={(e) => set("search", e.target.value)} aria-label="Search" />
+        {platforms.length > 1 && (
+          <select value={system} onChange={(e) => set("system", e.target.value === "pc" ? "" : e.target.value)} aria-label="System">
+            <option value="pc">PC</option>
+            <option value="all">All systems</option>
+            {platforms
+              .filter((p) => p.id !== "pc")
+              .map((p) => (
+                <option key={p.id} value={p.id}>
+                  {platformFor(p.id).name} ({p.count})
+                </option>
+              ))}
+          </select>
+        )}
         <select value={genre} onChange={(e) => set("genre", e.target.value)} aria-label="Genre">
           <option value="">All genres</option>
           {genres.map((g) => (
@@ -99,12 +146,19 @@ function AllGames() {
           <input type="checkbox" checked={kidSafe} onChange={(e) => set("kidSafe", e.target.checked ? "true" : "")} />
           Kid-safe only
         </label>
+        {installedIds.size > 0 && (
+          <label className="check">
+            <input type="checkbox" checked={onlyInstalled} onChange={(e) => set("installed", e.target.checked ? "true" : "")} />
+            {desktop ? "On this PC" : "Installed"}
+          </label>
+        )}
+        <ViewPicker prefs={prefs} onChange={setPrefs} />
       </div>
       {error && <p className="error">{error}</p>}
-      {games === null ? <p className="muted">Loading…</p> : games.length === 0 ? <p className="muted">No games match.</p> : (
+      {shown === null ? <p className="muted">Loading…</p> : shown.length === 0 ? <p className="muted">No games match.</p> : (
         <>
-          <p className="muted count">{games.length} games</p>
-          <GameGrid games={games} />
+          <p className="muted count">{shown.length} games</p>
+          <GameCollection games={shown} prefs={prefs} isInstalled={(g) => installedIds.has(g.id)} aspect={shelf} />
         </>
       )}
     </>

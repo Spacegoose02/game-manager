@@ -2440,3 +2440,379 @@ label.field {
   padding: 0.35rem;
   font-size: 0.6rem;
 }
+
+/* ---------- What an entry is, and why --------------------------------------- */
+
+.kind-reason {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+.kind-reason .badge {
+  white-space: nowrap;
+  cursor: help;
+}
+.badge.kind-game {
+  border-color: var(--good, #59ff9a);
+  color: var(--good, #59ff9a);
+}
+.badge.kind-update,
+.badge.kind-dlc {
+  color: var(--muted);
+}
+.badge.conf-high.kind-update,
+.badge.conf-high.kind-dlc {
+  border-color: var(--accent-2);
+  color: var(--text);
+}
+.badge.conf-low {
+  border-style: dashed;
+  border-color: var(--warn, #ffd166);
+}
+
+/* ---------- Library layouts ------------------------------------------------- */
+
+.view-picker {
+  display: inline-flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.view-picker .segmented button {
+  padding: 0.3em 0.7em;
+}
+@media (max-width: 900px) {
+  .view-label {
+    display: none;
+  }
+}
+.collection-group + .collection-group {
+  margin-top: 1.4rem;
+}
+.collection-title {
+  font-size: 1.05rem;
+  margin: 0 0 0.6rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--border);
+}
+.card-wrap {
+  position: relative;
+  min-width: 0;
+}
+.installed-dot {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--good, #59ff9a);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+.grid-compact {
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 0.35rem;
+}
+.grid-compact .card {
+  padding: 4px;
+}
+.grid-compact .card-title {
+  font-size: 0.82rem;
+}
+.grid-compact .card-meta,
+.grid-compact .badges {
+  display: none;
+}
+.cover-wall {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 4px;
+}
+.cover-tile {
+  position: relative;
+  display: block;
+  border-radius: 6px;
+  overflow: hidden;
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+.cover-tile .cover {
+  border-radius: 0;
+}
+.cover-tile:hover,
+.cover-tile:focus-visible {
+  transform: scale(1.06);
+  z-index: 1;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.cover-tile-name {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 1.2rem 0.35rem 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.cover-tile:hover .cover-tile-name,
+.cover-tile:focus-visible .cover-tile-name {
+  opacity: 1;
+}
+.cover-tile.is-installed::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--good, #59ff9a);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.55);
+}
+.game-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.game-list > li {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 6px 10px 6px 6px;
+  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid transparent;
+}
+.game-list > li:hover {
+  border-color: var(--border);
+}
+.game-list-cover .cover {
+  border-radius: 6px;
+}
+.game-list-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.game-list-title {
+  font-weight: 700;
+  color: inherit;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.game-list-title:hover {
+  text-decoration: underline;
+}
+.game-list .badges {
+  margin: 0;
+}
+.game-list-aside {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  justify-content: flex-end;
+}
+.num {
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 640px) {
+  .game-list > li {
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+  }
+  .game-list > li > .badges,
+  .game-list > li > .num {
+    display: none;
+  }
+}
+
+/* ---------- Installed: ready to play ---------------------------------------- */
+
+.play-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.9rem;
+}
+.play-card {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.play-card-cover {
+  position: relative;
+  display: block;
+}
+.play-card-cover .cover {
+  border-radius: 0;
+}
+.play-card-platform {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+}
+.play-card-body {
+  padding: 0.6rem 0.7rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+}
+.play-card-body .card-title {
+  color: inherit;
+  text-decoration: none;
+}
+.play-card-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: 0.4rem;
+}
+.play-card-actions .primary {
+  flex: 1;
+}
+
+/* ---------- Downloads -------------------------------------------------------- */
+
+.dl-summary {
+  display: flex;
+  gap: 2rem;
+  flex-wrap: wrap;
+  align-items: baseline;
+  color: var(--muted);
+}
+.dl-big {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.dl-group {
+  margin: 1.2rem 0;
+}
+.dl-group h2 {
+  margin: 0 0 0.3rem;
+  font-size: 1.1rem;
+  display: inline;
+}
+.dl-group > h2 {
+  display: block;
+}
+.dl-group summary {
+  cursor: pointer;
+}
+.dl-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+  gap: 0.7rem;
+  margin-top: 0.6rem;
+}
+.dl-active .dl-cards {
+  grid-template-columns: 1fr;
+}
+.dl-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--border);
+  min-width: 0;
+}
+.dl-card.tone-go {
+  border-left-color: var(--accent-2);
+}
+.dl-card.tone-wait {
+  border-left-color: var(--warn, #ffd166);
+}
+.dl-card.tone-ok {
+  border-left-color: var(--good, #59ff9a);
+}
+.dl-card.tone-bad {
+  border-left-color: var(--bad, #ff5c7a);
+}
+.dl-card-head {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.dl-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.dl-state {
+  flex-shrink: 0;
+}
+.dl-state.tone-go {
+  border-color: var(--accent-2);
+  color: var(--accent-2);
+}
+.dl-state.tone-wait {
+  border-color: var(--warn, #ffd166);
+  color: var(--warn, #ffd166);
+}
+.dl-state.tone-ok {
+  border-color: var(--good, #59ff9a);
+  color: var(--good, #59ff9a);
+}
+.dl-state.tone-bad {
+  border-color: var(--bad, #ff5c7a);
+  color: var(--bad, #ff5c7a);
+}
+.dl-card .meter {
+  height: 20px;
+  margin: 0.2rem 0;
+}
+.dl-card .meter span {
+  font-size: 0.75rem;
+}
+.dl-card .meter.paused div {
+  background: var(--warn, #ffd166);
+  opacity: 0.6;
+}
+.dl-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.9rem;
+}
+.dl-speed {
+  color: var(--accent-2);
+  font-weight: 700;
+}
+.dl-path {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.dl-actions {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: flex-end;
+}
+.cover-tile,
+.play-card-cover,
+.game-list-cover {
+  text-decoration: none;
+  color: inherit;
+}
+.game-list-cover .cover-placeholder span {
+  display: none;
+}
+.cover-tile .cover-placeholder span {
+  font-size: 0.8rem;
+}

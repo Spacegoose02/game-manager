@@ -39,6 +39,10 @@ on their own PC with one click, like a small private Steam.
 - **Updates and DLC:** patches and DLC (in an `Updates` or `DLC` folder, or named like
   `Game Update v1.3`) get their own Updates page instead of cluttering the library. The
   desktop app applies them over the installed game with a backup, so they can be undone.
+  A download named "Update" that's as big as the game is recognised as the full game.
+- **Library views:** grid, compact, cover wall or list, grouped by genre, system, installed
+  or A to Z, remembered per profile. The **Installed** tab lists what's ready to play with
+  Play and Open folder buttons.
 - **Profiles:** local accounts or single sign-on (OIDC, TinyAuth, forward auth), random
   raccoon avatars, kid profiles that only see kid-safe games, a backlog and journal per
   game, and per-profile play time.

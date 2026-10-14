@@ -79,6 +79,11 @@ to the desktop app, and Playnite tracks play time. See
 2. In Playnite, open **Add-ons, Extension settings, Libraries, LootDen**, enter the server
    address and paste the token.
 
+Each game appears under its own platform: PC games under PC (Windows), emulated games under
+Sony PlayStation, Nintendo SNES and so on, using Playnite's built-in platforms. Games imported
+by an older version of the plugin are moved to the right platform on the next library update.
+
+
 ## Yamtrack
 
 Your profile page has **Export for Yamtrack**: a CSV of the games you've installed and

@@ -34,10 +34,19 @@ describe("update packages in the library", () => {
   before(async () => {
     root = await mkdtemp(path.join(os.tmpdir(), "lootden-updates-"));
     await mkdir(path.join(root, "Cyberpunk 2077"));
-    await writeFile(path.join(root, "Cyberpunk 2077", "Cyberpunk2077.exe"), "exe");
+    await writeFile(path.join(root, "Cyberpunk 2077", "Cyberpunk2077.exe"), "x".repeat(1000));
     await writeFile(path.join(root, "Cyberpunk.2077.Update.v2.1-GOG.zip"), "zip");
-    await writeFile(path.join(root, "Stardew Valley v1.5.zip"), "zip");
-    await mkdir(path.join(root, "Updates"));
+    await writeFile(path.join(root, "Stardew Valley v1.5.zip"), "x".repeat(1000));
+    // Called an update, but as big as the game: the full game (the Cyberpunk bug).
+    await writeFile(path.join(root, "Cyberpunk.2077.v2.2.Update-GOG.zip"), "x".repeat(950));
+    // Named and sized like a patch, with a patch program in it.
+    await mkdir(path.join(root, "Updates", "Cyberpunk 2077 Hotfix v2.21"), { recursive: true });
+    await writeFile(path.join(root, "Updates", "Cyberpunk 2077 Hotfix v2.21", "patch_cyberpunk_2.21.exe"), "x".repeat(50));
+    // A full installer dropped in the Updates folder.
+    await mkdir(path.join(root, "Updates", "Stardew Valley v1.6.9"), { recursive: true });
+    await writeFile(path.join(root, "Updates", "Stardew Valley v1.6.9", "setup_stardew_valley_1.6.9_(123).exe"), "x".repeat(40));
+    await writeFile(path.join(root, "Updates", "Stardew Valley v1.6.9", "setup_stardew_valley_1.6.9_(123)-1.bin"), "x".repeat(40));
+    await mkdir(path.join(root, "Updates"), { recursive: true });
     await writeFile(path.join(root, "Updates", "Stardew Valley v1.5 to v1.6 Patch.zip"), "zip");
     await writeFile(path.join(root, "Updates", "patch_stardew_valley_1.6.1.exe"), "exe");
     await mkdir(path.join(root, "DLC"));
@@ -51,7 +60,15 @@ describe("update packages in the library", () => {
     await ctx.library.rescan();
 
     const games = (await app.inject({ url: "/api/games", headers: auth })).json() as Array<{ title: string; kind: string }>;
-    assert.deepEqual(games.map((g) => g.title).sort(), ["Cyberpunk 2077", "Stardew Valley v1 5"]);
+    const shown = games.map((g) => g.title).sort();
+    assert.deepEqual(shown, ["Cyberpunk 2077", "Cyberpunk 2077 v2.2", "Stardew Valley v1 5", "Stardew Valley v1.6.9"]);
+    const full = (await app.inject({ url: "/api/games", headers: auth })).json() as Array<{ id: string; title: string; kind: string; baseGameId: string | null; kindReason: { by: string; confidence: string; note: string } | null }>;
+    const bySize = full.find((g) => g.title === "Cyberpunk 2077 v2.2")!;
+    assert.equal(bySize.kindReason?.by, "size", "as big as the game, so it's the full game");
+    assert.equal(bySize.kindReason?.confidence, "high");
+    assert.match(bySize.kindReason!.note, /95% of Cyberpunk 2077/);
+    assert.equal(full.find((g) => g.title === "Stardew Valley v1.6.9")!.kindReason?.by, "content", "a full installer in Updates is a game");
+    assert.equal(full.find((g) => g.title === "Cyberpunk 2077")!.kindReason, null);
 
     const addons = (await app.inject({ url: "/api/games?kind=addon", headers: auth })).json() as Array<{ id: string; title: string; kind: string; baseGameId: string | null; version: string | null; fromVersion: string | null }>;
     const byTitle = new Map(addons.map((a) => [a.title, a]));
@@ -65,6 +82,9 @@ describe("update packages in the library", () => {
     const dlc = byTitle.get("Hollow Knight Godmaster")!;
     assert.equal(dlc.kind, "dlc");
     assert.equal(dlc.baseGameId, null, "no Hollow Knight on the server: DLC only");
+    const hotfix = byTitle.get("Cyberpunk 2077 Hotfix v2.21") as unknown as { kind: string; baseGameId: string; kindReason: { by: string; confidence: string } };
+    assert.deepEqual([hotfix.kind, hotfix.baseGameId, hotfix.kindReason.by, hotfix.kindReason.confidence], ["update", cyberpunk.id, "content", "high"]);
+    assert.equal((byTitle.get("Cyberpunk 2077 Update v2.1") as unknown as { kindReason: { by: string } }).kindReason.by, "name");
 
     // The game page lists its updates; the update page names its game.
     const detail = (await app.inject({ url: `/api/games/${stardew.id}`, headers: auth })).json() as { addons: Array<{ title: string }> };
@@ -77,6 +97,9 @@ describe("update packages in the library", () => {
     const fixed = await app.inject({ method: "PUT", url: `/api/games/${dlc.id}/package`, headers: auth, payload: { baseGameId: cyberpunk.id } });
     assert.equal(fixed.statusCode, 200);
     assert.equal((fixed.json() as { baseGameId: string }).baseGameId, cyberpunk.id);
+    // ...and say a full-size package really is an update.
+    const asUpdate = (await app.inject({ method: "PUT", url: `/api/games/${bySize.id}/package`, headers: auth, payload: { kind: "update" } })).json() as { kind: string; baseGameId: string; kindReason: { by: string } };
+    assert.deepEqual([asUpdate.kind, asUpdate.baseGameId, asUpdate.kindReason.by], ["update", cyberpunk.id, "admin"]);
     const asGame = await app.inject({ method: "PUT", url: `/api/games/${dlc.id}/package`, headers: auth, payload: { kind: "game" } });
     assert.equal((asGame.json() as { kind: string }).kind, "game");
     const after = (await app.inject({ url: "/api/games", headers: auth })).json() as Array<{ title: string }>;

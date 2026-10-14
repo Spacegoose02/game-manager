@@ -19,6 +19,8 @@ namespace LootDenLibrary
         public int? releaseYear { get; set; }
         public int? rating { get; set; }
         public string addedAt { get; set; }
+        /// <summary>"pc", or the emulated system ("ps1", "snes", ...).</summary>
+        public string platform { get; set; }
     }
 
     public class ServerGameDetail : ServerGame

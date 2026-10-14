@@ -73,53 +73,185 @@ export function Downloads() {
 
       <DownloadsFolder onMessage={setMsg} />
 
-      <section className="panel">
-        <h2>Queue</h2>
-        {list.downloads.length === 0 && <p className="muted">Nothing sent yet. Finished downloads are copied or moved into the games folder and show up in the library.</p>}
-        <ul className="list">
-          {list.downloads.map((d) => (
-            <li key={d.id} className="download">
-              <div style={{ flex: 1, minWidth: 240 }}>
-                <strong>{d.name}</strong>
-                <br />
-                <small className="muted">
-                  {d.client} · {d.status === "imported" ? `imported to ${d.importedPath}` : d.live ? `${d.live.state}${d.live.downloadSpeed ? ` · ${formatBytes(d.live.downloadSpeed)}/s` : ""}${d.live.etaSeconds ? ` · ${eta(d.live.etaSeconds)} left` : ""}` : d.status}
-                </small>
-                {d.error && <small className="error"> · {d.error}</small>}
-                {d.progress ? (
-                  <ImportMeter progress={d.progress} />
-                ) : d.live && d.status !== "imported" && (
-                  <div className="meter slim">
-                    <div style={{ width: `${d.live.progress * 100}%` }} />
-                  </div>
-                )}
-              </div>
-              <span className="inline">
-                {d.live && d.live.state === "paused" && <button onClick={() => act(() => api.controlDownload(d.id, "resume"))}>Resume</button>}
-                {d.live && d.live.state === "downloading" && <button onClick={() => act(() => api.controlDownload(d.id, "pause"))}>Pause</button>}
-                <button className="ghost" onClick={() => act(() => api.controlDownload(d.id, "remove", d.status !== "imported" && confirm("Also delete the downloaded files?")))}>
-                  Remove
-                </button>
-              </span>
-            </li>
-          ))}
-        </ul>
-        {list.other.length > 0 && (
-          <>
-            <h3>Also in the game category</h3>
-            <ul className="list">
-              {list.other.map((o) => (
-                <li key={o.client + o.id}>
-                  <span>
-                    {o.name} <small className="muted">({o.client}, {Math.round(o.progress * 100)}%, {o.state})</small>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-      </section>
+      <Queue list={list} busy={busy} act={act} />
     </div>
+  );
+}
+
+type Stage = "active" | "queued" | "done";
+
+/** Where a download is, for grouping and its badge. */
+function stageOf(d: DownloadRecord): { stage: Stage; label: string; tone: "go" | "wait" | "ok" | "bad" | "muted" } {
+  if (d.status === "failed") return { stage: "done", label: "Failed", tone: "bad" };
+  if (d.status === "imported") return { stage: "done", label: "In library", tone: "ok" };
+  if (d.status === "removed") return { stage: "done", label: "Removed", tone: "muted" };
+  if (d.status === "importing") return { stage: "active", label: "Importing", tone: "go" };
+  const state = d.live?.state;
+  if (!state) return { stage: "queued", label: "Waiting for client", tone: "wait" };
+  if (state === "paused") return { stage: "queued", label: "Paused", tone: "wait" };
+  if (state === "queued") return { stage: "queued", label: "Queued", tone: "wait" };
+  if (state === "checking") return { stage: "active", label: "Checking", tone: "go" };
+  if (state === "completed" || state === "seeding") return { stage: "active", label: "Finishing", tone: "go" };
+  if (state === "failed") return { stage: "done", label: "Failed", tone: "bad" };
+  return { stage: "active", label: "Downloading", tone: "go" };
+}
+
+const GROUPS: Array<[Stage, string, string]> = [
+  ["active", "Active", "Downloading or being imported into the library."],
+  ["queued", "Queued", "Waiting in the download client, or paused."],
+  ["done", "Done", "Finished downloads are copied or moved into the games folder and show up in the library."],
+];
+
+/** Sent downloads as cards: active first with progress and speed, then queued, then finished. */
+function Queue({
+  list,
+  busy,
+  act,
+}: {
+  list: { downloads: DownloadRecord[]; other: LiveDownload[] };
+  busy: boolean;
+  act: (fn: () => Promise<unknown>, done?: string) => Promise<void>;
+}) {
+  const [showDone, setShowDone] = useState(12);
+  const staged = list.downloads.map((d) => ({ d, s: stageOf(d) }));
+  const speed = staged.reduce((t, { d, s }) => t + (s.stage === "active" && d.live ? d.live.downloadSpeed : 0), 0);
+  const active = staged.filter((x) => x.s.stage === "active").length;
+  const queued = staged.filter((x) => x.s.stage === "queued").length;
+  return (
+    <section className="dl-queue">
+      <header className="dl-summary panel">
+        <div>
+          <span className="dl-big">{active}</span> active
+        </div>
+        <div>
+          <span className="dl-big">{queued}</span> queued
+        </div>
+        <div>
+          <span className="dl-big">{speed ? `${formatBytes(speed)}/s` : "Idle"}</span> {speed ? "total speed" : ""}
+        </div>
+      </header>
+      {list.downloads.length === 0 && (
+        <div className="panel">
+          <p className="muted">Nothing sent yet. Search above, or grab a game from Discover or the wishlist.</p>
+        </div>
+      )}
+      {GROUPS.map(([stage, title, note]) => {
+        let items = staged.filter((x) => x.s.stage === stage);
+        if (!items.length) return null;
+        // Failures first so they're seen; then newest.
+        if (stage === "done") items = [...items].sort((a, b) => Number(b.s.tone === "bad") - Number(a.s.tone === "bad") || b.d.addedAt.localeCompare(a.d.addedAt));
+        const more = stage === "done" ? Math.max(0, items.length - showDone) : 0;
+        return (
+          <div key={stage} className={`dl-group dl-${stage}`}>
+            <h2>
+              {title} <span className="muted small">{items.length}</span>
+            </h2>
+            {stage !== "active" && <p className="muted small">{note}</p>}
+            <div className="dl-cards">
+              {items.slice(0, stage === "done" ? showDone : undefined).map(({ d, s }) => (
+                <DownloadCard key={d.id} d={d} stage={s} busy={busy} act={act} />
+              ))}
+            </div>
+            {more > 0 && (
+              <button className="ghost small" onClick={() => setShowDone((n) => n + 24)}>
+                Show {Math.min(more, 24)} more
+              </button>
+            )}
+          </div>
+        );
+      })}
+      {list.other.length > 0 && (
+        <details className="dl-group">
+          <summary>
+            <h2>
+              Also in the game category <span className="muted small">{list.other.length}</span>
+            </h2>
+          </summary>
+          <p className="muted small">Added to the download client some other way. LootDen doesn't import these.</p>
+          <div className="dl-cards">
+            {list.other.map((o) => (
+              <article key={o.client + o.id} className="dl-card">
+                <div className="dl-card-head">
+                  <strong className="dl-name">{o.name}</strong>
+                  <span className="badge badge-muted">{o.state}</span>
+                </div>
+                <div className="meter slim">
+                  <div style={{ width: `${o.progress * 100}%` }} />
+                </div>
+                <div className="dl-facts muted small">
+                  <span>{Math.round(o.progress * 100)}%</span>
+                  <span>{o.client}</span>
+                  {o.sizeBytes > 0 && <span>{formatBytes(o.sizeBytes)}</span>}
+                </div>
+              </article>
+            ))}
+          </div>
+        </details>
+      )}
+    </section>
+  );
+}
+
+function DownloadCard({
+  d,
+  stage,
+  busy,
+  act,
+}: {
+  d: DownloadRecord;
+  stage: ReturnType<typeof stageOf>;
+  busy: boolean;
+  act: (fn: () => Promise<unknown>, done?: string) => Promise<void>;
+}) {
+  const live = d.live;
+  const pct = live ? Math.round(live.progress * 1000) / 10 : null;
+  const showBar = stage.stage !== "done" && (d.progress || live);
+  return (
+    <article className={`dl-card tone-${stage.tone}`}>
+      <div className="dl-card-head">
+        <strong className="dl-name" title={d.name}>
+          {d.name}
+        </strong>
+        <span className={`badge dl-state tone-${stage.tone}`}>{stage.label}</span>
+      </div>
+      {showBar &&
+        (d.progress ? (
+          <ImportMeter progress={d.progress} />
+        ) : (
+          <div className={`meter${stage.label === "Paused" ? " paused" : ""}`}>
+            <div style={{ width: `${pct ?? 0}%` }} />
+            <span>{pct != null ? `${pct}%` : ""}</span>
+          </div>
+        ))}
+      <div className="dl-facts muted small">
+        {stage.stage === "active" && live?.downloadSpeed ? <span className="dl-speed">↓ {formatBytes(live.downloadSpeed)}/s</span> : null}
+        {stage.stage === "active" && live?.etaSeconds ? <span>{eta(live.etaSeconds)} left</span> : null}
+        {live?.sizeBytes ? <span>{stage.stage === "done" ? formatBytes(live.sizeBytes) : `${formatBytes(live.sizeBytes * live.progress)} of ${formatBytes(live.sizeBytes)}`}</span> : null}
+        <span>{d.client}</span>
+        <span title={new Date(d.addedAt).toLocaleString()}>Added {new Date(d.addedAt).toLocaleDateString()}</span>
+      </div>
+      {d.status === "imported" && d.importedPath && (
+        <p className="small dl-path">
+          <code>{d.importedPath}</code>
+        </p>
+      )}
+      {d.error && <p className="error small">{d.error}</p>}
+      <div className="dl-actions">
+        {live?.state === "paused" && (
+          <button className="small" disabled={busy} onClick={() => act(() => api.controlDownload(d.id, "resume"))}>
+            ▶ Resume
+          </button>
+        )}
+        {live?.state === "downloading" && (
+          <button className="small" disabled={busy} onClick={() => act(() => api.controlDownload(d.id, "pause"))}>
+            ❚❚ Pause
+          </button>
+        )}
+        <button className="ghost small" disabled={busy} onClick={() => act(() => api.controlDownload(d.id, "remove", d.status !== "imported" && confirm("Also delete the downloaded files?")))}>
+          Remove
+        </button>
+      </div>
+    </article>
   );
 }
 
