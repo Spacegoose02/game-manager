@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { mkdir, rename, statfs } from "node:fs/promises";
 import path from "node:path";
-import { PC_PLATFORM, PLATFORMS, type ControllerSupport, type GameDetail, type GameMetadata, type GameSummary, type LibraryStats } from "@lootden/shared";
+import { compareVersion, PC_PLATFORM, PLATFORMS, type ControllerSupport, type GameDetail, type GameMetadata, type GameSummary, type LibraryStats, type PackageKind } from "@lootden/shared";
 import { json, now, type Db } from "../db/database.js";
 import { kidSafeFromRatings } from "../metadata/ratings.js";
+import { cleanTitle, titleSimilarity } from "../metadata/titles.js";
 import { gameIdFor, scanLibrary, type ScannedGame } from "./scanner.js";
 
 export interface GameQuery {
@@ -15,6 +16,8 @@ export interface GameQuery {
   missingMetadata?: boolean;
   /** "pc", "emulated" (every other system) or one platform id. Unset means everything. */
   platform?: string;
+  /** "game" (the default) leaves update and DLC packages out; "addon" is updates and DLC together. */
+  kind?: PackageKind | "addon" | "all";
   sort?: "title" | "added" | "release" | "rating" | "size";
   order?: "asc" | "desc";
   limit?: number;
@@ -29,6 +32,8 @@ interface GameRow {
   cover_override: string | null;
   background_override: string | null;
   save_path: string | null;
+  kind_override: string | null;
+  base_game_override: string | null;
 }
 
 interface MetadataRow {
@@ -82,6 +87,8 @@ export class Library {
   private lastScanMs: number | null = null;
   private scanning: Promise<void> | null = null;
   private listeners: Array<(games: ScannedGame[]) => void> = [];
+  /** Which game each update or DLC belongs to; rebuilt after scans, overrides and metadata changes (and at most every few seconds). */
+  private baseCache: { at: number; map: Map<string, string | null> } | null = null;
 
   constructor(
     private readonly db: Db,
@@ -101,6 +108,7 @@ export class Library {
         const games = await scanLibrary(this.gamesDir);
         this.sync(games);
         this.scanned = new Map(games.map((g) => [g.id, g]));
+        this.baseCache = null;
         this.lastScanAt = new Date();
         this.lastScanMs = Date.now() - started;
       } finally {
@@ -141,7 +149,7 @@ export class Library {
 
   private rows(): { games: Map<string, GameRow>; meta: Map<string, MetadataRow> } {
     const games = new Map(
-      (this.db.prepare("SELECT id, added_at, title_override, kid_safe_override, controller_override, cover_override, background_override, save_path FROM games").all() as unknown as GameRow[]).map(
+      (this.db.prepare("SELECT id, added_at, title_override, kid_safe_override, controller_override, cover_override, background_override, save_path, kind_override, base_game_override FROM games").all() as unknown as GameRow[]).map(
         (r) => [r.id, r],
       ),
     );
@@ -149,9 +157,57 @@ export class Library {
     return { games, meta };
   }
 
+  /** What an entry is: the admin's correction, else what its name says. */
+  private kindOf(g: ScannedGame, row: Pick<GameRow, "kind_override"> | undefined): PackageKind {
+    const k = row?.kind_override;
+    return k === "game" || k === "update" || k === "dlc" ? k : g.kind;
+  }
+
+  /**
+   * Matches every update and DLC to its game: the admin's choice, else the library game whose
+   * name best matches the package's ("Cyberpunk 2077 Update v2.1" belongs to "Cyberpunk 2077").
+   */
+  private bases(): Map<string, string | null> {
+    if (this.baseCache && Date.now() - this.baseCache.at < 5000) return this.baseCache.map;
+    const { games: rows, meta } = this.rows();
+    const all = [...this.scanned.values()];
+    const games = all.filter((g) => this.kindOf(g, rows.get(g.id)) === "game");
+    const names = new Map(
+      games.map((g) => {
+        const row = rows.get(g.id);
+        const shown = [row?.title_override, meta.get(g.id)?.name, g.title].filter((x): x is string => !!x);
+        return [g.id, [...shown, cleanTitle(path.posix.basename(g.source)).query]];
+      }),
+    );
+    const map = new Map<string, string | null>();
+    for (const p of all) {
+      const row = rows.get(p.id);
+      if (this.kindOf(p, row) === "game") continue;
+      const chosen = row?.base_game_override;
+      if (chosen) {
+        map.set(p.id, chosen !== "none" && this.scanned.has(chosen) ? chosen : null);
+        continue;
+      }
+      const want = cleanTitle(p.baseTitle).query;
+      let best: { id: string; score: number } | null = null;
+      for (const g of games) {
+        if (g.platform !== p.platform) continue;
+        const score = Math.max(...names.get(g.id)!.map((n) => titleSimilarity(want, n)));
+        if (score >= 0.8 && (!best || score > best.score)) best = { id: g.id, score };
+      }
+      map.set(p.id, best?.id ?? null);
+    }
+    this.baseCache = { at: Date.now(), map };
+    return map;
+  }
+
   private view(g: ScannedGame, row: GameRow | undefined, metaRow: MetadataRow | undefined): GameDetail {
     const metadata = metaRow ? metadataFromRow(metaRow) : null;
-    const kidSafe =
+    const kind = this.kindOf(g, row);
+    const baseGameId = kind === "game" ? null : (this.bases().get(g.id) ?? null);
+    const baseGame = baseGameId ? this.get(baseGameId, false) : undefined;
+    const ownCover = imageUrl(g.id, "cover", row?.cover_override ?? metadata?.coverUrl ?? (metadata?.steamAppId ? "steam" : null) ?? metadata?.screenshots[0] ?? null);
+    const ownKidSafe =
       row?.kid_safe_override != null ? row.kid_safe_override === 1 : metadata ? kidSafeFromRatings(metadata.ageRatings) : null;
     const { files, entryModifiedAt, ...base } = g;
     return {
@@ -159,13 +215,19 @@ export class Library {
       title: row?.title_override || metadata?.name || g.title,
       // "Recently added" follows the folder's Date modified, like sorting the games folder in Explorer.
       addedAt: entryModifiedAt ?? row?.added_at ?? new Date(0).toISOString(),
-      coverUrl: imageUrl(g.id, "cover", row?.cover_override ?? metadata?.coverUrl ?? (metadata?.steamAppId ? "steam" : null)),
+      // Updates and DLC show their game's art unless they have their own.
+      coverUrl: ownCover ?? baseGame?.coverUrl ?? null,
       backgroundUrl: imageUrl(g.id, "background", row?.background_override ?? metadata?.screenshots[0] ?? (metadata?.steamAppId ? "steam" : null)),
       genres: metadata?.genres ?? [],
       releaseYear: metadata?.releaseDate ? Number(metadata.releaseDate.slice(0, 4)) : null,
       rating: metadata?.rating != null ? Math.round(metadata.rating) : null,
       controllerSupport: (row?.controller_override as ControllerSupport | null) ?? metadata?.controllerSupport ?? null,
-      kidSafe,
+      // Updates and DLC are as kid-safe as their game.
+      kidSafe: ownKidSafe ?? baseGame?.kidSafe ?? null,
+      kind,
+      version: g.version,
+      fromVersion: kind === "update" ? g.fromVersion : null,
+      baseGameId,
       files,
       metadata,
       overrides: {
@@ -176,17 +238,45 @@ export class Library {
         background: row?.background_override ?? null,
       },
       savePath: row?.save_path ?? null,
+      addons: [],
+      baseGame: null,
+      packageOverrides: {
+        kind: (row?.kind_override as PackageKind | null) ?? null,
+        baseGameId: row?.base_game_override ?? null,
+      },
     };
   }
 
-  get(id: string): GameDetail | undefined {
+  /** One game with its file list. `related` adds its updates and DLC, or the game an update belongs to. */
+  get(id: string, related = true): GameDetail | undefined {
     const g = this.scanned.get(id);
     if (!g) return undefined;
-    const row = this.db.prepare("SELECT id, added_at, title_override, kid_safe_override, controller_override, cover_override, background_override, save_path FROM games WHERE id = ?").get(id) as
+    const row = this.db.prepare("SELECT id, added_at, title_override, kid_safe_override, controller_override, cover_override, background_override, save_path, kind_override, base_game_override FROM games WHERE id = ?").get(id) as
       | GameRow
       | undefined;
     const meta = this.db.prepare("SELECT * FROM metadata WHERE game_id = ?").get(id) as MetadataRow | undefined;
-    return this.view(g, row, meta);
+    const game = this.view(g, row, meta);
+    if (!related) return game;
+    if (game.kind === "game") {
+      game.addons = this.list({ kind: "addon" })
+        .filter((a) => a.baseGameId === id)
+        .sort((a, b) => (a.kind === b.kind ? (b.version && a.version ? compareVersion(b.version, a.version) : 0) : a.kind === "update" ? -1 : 1));
+    } else if (game.baseGameId) {
+      const base = this.get(game.baseGameId, false);
+      if (base) game.baseGame = { id: base.id, title: base.title, coverUrl: base.coverUrl, version: base.version };
+    }
+    return game;
+  }
+
+  /** Admin: corrects what an entry is and which game it belongs to (null = work it out from the name, "none" = no game). */
+  setPackage(id: string, o: { kind?: PackageKind | null; baseGameId?: string | null }): void {
+    if (o.kind !== undefined) this.db.prepare("UPDATE games SET kind_override = ? WHERE id = ?").run(o.kind, id);
+    if (o.baseGameId !== undefined) {
+      if (o.baseGameId && o.baseGameId !== "none" && !this.scanned.has(o.baseGameId)) throw new Error("Unknown game");
+      if (o.baseGameId === id) throw new Error("An update can't belong to itself");
+      this.db.prepare("UPDATE games SET base_game_override = ? WHERE id = ?").run(o.baseGameId, id);
+    }
+    this.baseCache = null;
   }
 
   list(query: GameQuery = {}): GameSummary[] {
@@ -195,7 +285,10 @@ export class Library {
     const genre = query.genre?.toLowerCase();
     let out: GameSummary[] = [];
     for (const g of this.scanned.values()) {
-      const { files: _f, metadata: _m, overrides: _o, backgroundUrl: _b, savePath: _s, ...summary } = this.view(g, games.get(g.id), meta.get(g.id));
+      const kind = this.kindOf(g, games.get(g.id));
+      const want = query.kind ?? "game";
+      if (want !== "all" && (want === "addon" ? kind === "game" : kind !== want)) continue;
+      const { files: _f, metadata: _m, overrides: _o, backgroundUrl: _b, savePath: _s, addons: _a, baseGame: _g, packageOverrides: _p, ...summary } = this.view(g, games.get(g.id), meta.get(g.id));
       if (q && !summary.title.toLowerCase().includes(q) && !summary.source.toLowerCase().includes(q)) continue;
       if (query.platform === "emulated" ? summary.platform === PC_PLATFORM : query.platform && summary.platform !== query.platform) continue;
       if (genre && !summary.genres.some((x) => x.toLowerCase() === genre)) continue;
@@ -256,8 +349,8 @@ export class Library {
     try {
       this.db
         .prepare(
-          `INSERT INTO games (id, source, added_at, title_override, kid_safe_override, controller_override, cover_override, background_override, save_path)
-           SELECT ?, ?, added_at, title_override, kid_safe_override, controller_override, cover_override, background_override, save_path FROM games WHERE id = ?
+          `INSERT INTO games (id, source, added_at, title_override, kid_safe_override, controller_override, cover_override, background_override, save_path, kind_override, base_game_override)
+           SELECT ?, ?, added_at, title_override, kid_safe_override, controller_override, cover_override, background_override, save_path, kind_override, base_game_override FROM games WHERE id = ?
            ON CONFLICT(id) DO NOTHING`,
         )
         .run(newId, newSource, oldId);

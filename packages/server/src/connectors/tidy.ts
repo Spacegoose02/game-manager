@@ -2,7 +2,8 @@ import { spawn } from "node:child_process";
 import { access, constants, readdir, rename, rm, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { groupArchiveSets, safeFolderName, setupKindOf } from "@lootden/shared";
+import { groupArchiveSets, packageInfo, safeFolderName, setupKindOf } from "@lootden/shared";
+import { packageTitle } from "../catalog/scanner.js";
 import { cleanTitle } from "../metadata/titles.js";
 
 export interface TidyOptions {
@@ -38,6 +39,13 @@ export function releaseVersion(name: string): string | null {
 /** "The.Witcher.3.v4.04-GOG" -> "The Witcher 3 v4.04". */
 export function tidyName(releaseName: string): string {
   const base = releaseName.replace(/(\.part\d+)?\.(zip|7z|rar|iso)(\.\d{3})?$/i, "");
+  // Updates and DLC keep saying so, or they'd be taken for the full game once imported.
+  const pkg = packageInfo(base);
+  if (pkg.kind === "update") {
+    const versions = pkg.fromVersion ? `v${pkg.fromVersion} to v${pkg.version}` : pkg.version ? `v${pkg.version}` : "";
+    return safeFolderName(`${pkg.baseTitle} Update ${versions}`.trim());
+  }
+  if (pkg.kind === "dlc") return safeFolderName(packageTitle(base));
   const { query } = cleanTitle(base);
   const version = releaseVersion(base);
   const label = version ? (version.startsWith("Build") ? `${query} ${version}` : `${query} v${version}`) : query;

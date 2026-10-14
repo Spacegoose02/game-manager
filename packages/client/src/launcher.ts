@@ -24,7 +24,7 @@ async function collect(root: string, exts: RegExp, rel = "", depth = 0, out: Can
   for (const e of entries) {
     const r = rel ? path.join(rel, e.name) : e.name;
     if (e.isDirectory()) {
-      if (!/^(_?redist|_commonredist|directx|support|__installer|.*prereq.*)$/i.test(e.name)) await collect(root, exts, r, depth + 1, out);
+      if (!/^(_?redist|_commonredist|directx|support|__installer|.*prereq.*|\.lootden.*)$/i.test(e.name)) await collect(root, exts, r, depth + 1, out);
     } else if (exts.test(e.name) && !NOT_THE_GAME.test(e.name.replace(/\.[^.]+$/, ""))) {
       out.push({ rel: r, depth, size: (await stat(path.join(root, r))).size });
     }

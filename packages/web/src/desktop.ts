@@ -19,6 +19,21 @@ export interface InstalledGame {
   needsSetup?: "disc" | "installer" | null;
   /** Where the installer put the game, once it has been run. */
   installedDir?: string;
+  /** The installed version, and the updates and DLC applied to this copy (missing in older apps). */
+  version?: string | null;
+  updates?: AppliedUpdate[];
+}
+
+export interface AppliedUpdate {
+  id: string;
+  title: string;
+  kind: "update" | "dlc";
+  previousVersion: string | null;
+  version: string | null;
+  mode: "files" | "installer";
+  appliedAt: string;
+  replaced: number;
+  added: number;
 }
 
 export interface EmulatorSetup {
@@ -63,6 +78,9 @@ export interface DesktopBridge {
   /** Downloaded installers: run the setup on this PC, and (admins) upload the installed game. */
   runSetup?(gameId: string): Promise<{ installedDir: string; executable?: string } | null>;
   uploadInstalled?(gameId: string): Promise<GameDetailLike | null>;
+  /** Updates and DLC: apply one to its installed game (with a backup), or undo the latest. Missing in older apps. */
+  applyUpdate?(updateId: string): Promise<AppliedUpdate | null>;
+  undoUpdate?(updateId: string): Promise<AppliedUpdate | null>;
   /** Missing in desktop apps older than save sync. */
   backupSaves?(gameId: string): Promise<{ backupId: number; size: number } | { error: string }>;
   restoreSaves?(gameId: string, saveId: number): Promise<{ previous: string | null } | null>;

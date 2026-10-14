@@ -2,6 +2,8 @@
 // Keep this package dependency-free so both sides can import it anywhere.
 
 export * from "./emulators.js";
+export * from "./packages.js";
+import type { PackageKind } from "./packages.js";
 export * from "./platforms.js";
 
 export const API_VERSION = 1;
@@ -60,6 +62,14 @@ export interface GameSummary {
   controllerSupport: ControllerSupport | null;
   /** True/false when known from age ratings or an admin override; null when unknown. */
   kidSafe: boolean | null;
+  /** A full game, or an update or DLC package applied over an installed game. */
+  kind: PackageKind;
+  /** Version from the file or folder name: a game's own version, or the version an update brings it to. */
+  version: string | null;
+  /** Updates: the version that must be installed first, when the name says. */
+  fromVersion: string | null;
+  /** Updates and DLC: the library game they belong to; null when that game isn't on the server. */
+  baseGameId: string | null;
 }
 
 export interface GameMetadata {
@@ -100,6 +110,12 @@ export interface GameDetail extends GameSummary {
    * %LOCALAPPDATA%, %USERPROFILE%, %DOCUMENTS% and {game} (the install folder).
    */
   savePath: string | null;
+  /** Updates and DLC on the server for this game, newest version first. */
+  addons: GameSummary[];
+  /** For an update or DLC: the game it belongs to. */
+  baseGame: Pick<GameSummary, "id" | "title" | "coverUrl" | "version"> | null;
+  /** Admin overrides for update and DLC matching; null means "worked out from the name". */
+  packageOverrides: { kind: PackageKind | null; baseGameId: string | null };
 }
 
 /** A save backup a player uploaded for one game. */

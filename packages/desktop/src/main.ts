@@ -31,6 +31,9 @@ import {
   type PrepareStep,
   saveExecutable,
   uninstallGame,
+  applyUpdate,
+  undoUpdate,
+  UpdateMismatchError,
   type InstallEvent,
 } from "@lootden/client";
 import { SettingsStore } from "./settings.js";
@@ -534,6 +537,97 @@ function registerIpc(): void {
     } finally {
       running.delete(gameId);
     }
+  });
+
+  /**
+   * Applies an update or DLC from the server to its installed game. Files are copied over the
+   * game with a backup (undo restores it); a setup program is run against the game's folder.
+   * When the versions don't line up, the player decides whether to go ahead.
+   */
+  ipcMain.handle("gm:applyUpdate", async (e, updateId: string) => {
+    fromServer(e);
+    if (running.has(updateId)) throw new Error("Already applying this update");
+    const api = await client();
+    const update = await api.getGame(updateId);
+    if (!update.baseGameId) throw new Error(`${update.title}'s game isn't on the server, so there's nothing to apply it to`);
+    const game = await findInstalled(update.baseGameId).catch(() => {
+      throw new Error(`Install ${update.baseGame?.title ?? "the game"} first`);
+    });
+    const controller = new AbortController();
+    running.set(updateId, controller);
+    const step = (message: string, extra: object = {}) => send({ gameId: updateId, type: "prepare", message, ...extra });
+    let last = 0;
+    const sevenZip = await sevenZipPath();
+    const options = (force: boolean) => ({
+      workDir: path.join(path.dirname(game.dir), `.update-${updateId}`),
+      sevenZipPath: sevenZip,
+      force,
+      signal: controller.signal,
+      runInstaller: async (setup: string, target: string, args: string[]) => {
+        if (process.platform !== "win32") throw new Error("This update is a setup program, which needs the Windows app. On Linux, run it with Wine yourself.");
+        step(`Running ${path.basename(setup)}. Point it at ${target} if it asks where the game is.`);
+        await runElevated(setup, args);
+      },
+      onEvent: (ev: InstallEvent | { type: "apply"; mode: string; target: string }) => {
+        if (ev.type === "apply") return step(ev.mode === "files" ? `Copying the update into ${ev.target}` : "Running the update's setup program");
+        if (ev.type === "download") {
+          const now = Date.now();
+          if (now - last < 250 && ev.received < ev.total) return;
+          last = now;
+        }
+        send({ gameId: updateId, ...(ev.type === "start" ? { type: "start", gameDir: ev.gameDir, totalBytes: ev.game.sizeBytes } : ev) });
+      },
+    });
+    try {
+      let applied;
+      try {
+        applied = await applyUpdate(api, updateId, game, options(false));
+      } catch (err) {
+        if (!(err instanceof UpdateMismatchError)) throw err;
+        const { response } = await dialog.showMessageBox(win!, {
+          type: "warning",
+          buttons: ["Apply anyway", "Cancel"],
+          defaultId: 1,
+          cancelId: 1,
+          message: `Apply ${update.title} to ${game.title}?`,
+          detail: `${err.message}. Applying an update made for another version can break the game; files it replaces are backed up so you can undo it.`,
+        });
+        if (response !== 0) {
+          step("Cancelled", { done: true });
+          return null;
+        }
+        applied = await applyUpdate(api, updateId, game, options(true));
+      }
+      step(
+        applied.mode === "files"
+          ? `Applied: ${applied.replaced} files replaced (backed up), ${applied.added} added${applied.version ? `. ${game.title} is now v${applied.version}` : ""}.`
+          : `Done${applied.version ? `. ${game.title} is now recorded as v${applied.version}` : ""}.`,
+        { done: true },
+      );
+      return applied;
+    } catch (err) {
+      step(controller.signal.aborted ? "Cancelled" : (err as Error).message, { done: true, error: !controller.signal.aborted });
+      throw err;
+    } finally {
+      running.delete(updateId);
+    }
+  });
+
+  ipcMain.handle("gm:undoUpdate", async (e, updateId: string) => {
+    fromServer(e);
+    const game = (await listInstalled(await searchDirs())).find((g) => g.updates?.some((u) => u.id === updateId));
+    if (!game) throw new Error("That update isn't applied on this computer");
+    const record = game.updates!.find((u) => u.id === updateId)!;
+    const { response } = await dialog.showMessageBox(win!, {
+      type: "question",
+      buttons: ["Undo update", "Cancel"],
+      defaultId: 0,
+      cancelId: 1,
+      message: `Undo ${record.title}?`,
+      detail: `The ${record.replaced} files it replaced in ${game.title} are put back and the ${record.added} it added are removed.`,
+    });
+    if (response !== 0) return null;
+    return undoUpdate(game, updateId);
   });
 
   /** Admin: zip the game the installer put on this PC and upload it in place of the installer. */

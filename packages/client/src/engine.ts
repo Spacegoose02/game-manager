@@ -9,3 +9,4 @@ export { findExecutable, launchAndTrack, saveExecutable } from "./launcher.js";
 export * from "./emulators.js";
 export { backupSaves, expandSavePath, restoreSaves } from "./saves.js";
 export { findSetup, prepareGame, runLocalSetup, uploadInstalledFolder, type PrepareStep } from "./prepare.js";
+export { applyUpdate, BACKUP_FOLDER, undoUpdate, UpdateMismatchError, updateProblem, type AppliedUpdate, type ApplyUpdateOptions } from "./updates.js";

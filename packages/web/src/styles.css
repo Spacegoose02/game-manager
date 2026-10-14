@@ -276,7 +276,7 @@ label.check {
 }
 .nav a {
   white-space: nowrap;
-  padding: 0.45em 0.8em;
+  padding: 0.45em 0.7em;
   border-radius: 999px;
   text-decoration: none;
   color: var(--muted);
@@ -2389,4 +2389,54 @@ label.field {
 }
 .raccoon-grid img {
   border-radius: 10px;
+}
+
+/* Updates and DLC */
+.pkg-page .tabs {
+  overflow-x: auto;
+}
+.pkg-group {
+  margin-bottom: 1rem;
+}
+.pkg-head {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+.pkg-head h2 {
+  margin: 0 0 0.2rem;
+}
+.pkg-cover {
+  width: 64px;
+  flex-shrink: 0;
+}
+.pkg-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+}
+.pkg-list > li {
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--border);
+}
+.pkg-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+  margin-bottom: 0.35rem;
+}
+.pkg-title a {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.pkg-actions .meter {
+  margin-top: 0.5rem;
+}
+.pkg-for {
+  margin: 0.25rem 0 0.75rem;
+}
+.pkg-cover .cover-placeholder {
+  padding: 0.35rem;
+  font-size: 0.6rem;
 }

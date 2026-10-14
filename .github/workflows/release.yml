@@ -62,9 +62,9 @@ jobs:
       - run: npm run package:${{ matrix.target }} -w @lootden/client
       # The CLI needs the 7za beside it, so ship each platform folder as one archive.
       - if: matrix.target == 'win'
-        run: Compress-Archive -Path packages/client/release/win-x64/* -DestinationPath packages/client/release/gm-win-x64.zip
+        run: Compress-Archive -Path packages/client/release/win-x64/* -DestinationPath packages/client/release/lootden-cli-win-x64.zip
       - if: matrix.target == 'linux'
-        run: tar -czf packages/client/release/gm-linux-x64.tar.gz -C packages/client/release/linux-x64 .
+        run: tar -czf packages/client/release/lootden-cli-linux-x64.tar.gz -C packages/client/release/linux-x64 .
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.target }}
@@ -72,7 +72,7 @@ jobs:
             packages/desktop/release/*.exe
             packages/desktop/release/*.AppImage
             packages/desktop/release/*.deb
-            packages/client/release/gm-*
+            packages/client/release/lootden-cli-*
 
   playnite:
     runs-on: windows-latest

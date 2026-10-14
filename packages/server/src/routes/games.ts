@@ -4,7 +4,7 @@ import path from "node:path";
 import type { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { PC_PLATFORM, safeFolderName, type ControllerSupport, type GameSummary } from "@lootden/shared";
+import { PC_PLATFORM, safeFolderName, type ControllerSupport, type GameSummary, type PackageKind } from "@lootden/shared";
 import type { GameQuery } from "../catalog/library.js";
 import { resolveGameFile } from "../catalog/scanner.js";
 import { HttpProblem, requireAdmin, requireUser, type AppContext } from "../context.js";
@@ -38,6 +38,7 @@ type ListQuery = {
   kidSafe?: string;
   missingMetadata?: string;
   platform?: string;
+  kind?: GameQuery["kind"];
   sort?: GameQuery["sort"];
   order?: GameQuery["order"];
   limit?: string;
@@ -62,6 +63,7 @@ export function gameRoutes(app: FastifyInstance, ctx: AppContext) {
       kidSafe: kidOnly(req) || q.kidSafe === "true" || q.kidSafe === "1",
       missingMetadata: q.missingMetadata === "true",
       platform: q.platform || undefined,
+      kind: q.kind && ["game", "update", "dlc", "addon", "all"].includes(q.kind) ? q.kind : undefined,
       sort: q.sort,
       order: q.order,
       limit: q.limit ? Number(q.limit) : undefined,
@@ -242,6 +244,20 @@ export function gameRoutes(app: FastifyInstance, ctx: AppContext) {
       return ctx.library.get(req.params.id);
     },
   );
+
+  /** What an entry is (game, update, DLC) and which game an update or DLC belongs to. null puts it back to automatic. */
+  app.put<{ Params: { id: string }; Body: { kind?: PackageKind | null; baseGameId?: string | null } }>("/api/games/:id/package", async (req) => {
+    requireAdmin(req);
+    if (!ctx.library.get(req.params.id)) throw new HttpProblem(404, "Game not found");
+    const b = req.body ?? {};
+    if (b.kind != null && !["game", "update", "dlc"].includes(b.kind)) throw new HttpProblem(400, "kind is game, update, dlc or null");
+    try {
+      ctx.library.setPackage(req.params.id, { kind: b.kind, baseGameId: b.baseGameId });
+    } catch (err) {
+      throw new HttpProblem(400, (err as Error).message);
+    }
+    return ctx.library.get(req.params.id);
+  });
 
   app.get("/api/metadata/status", async (req) => {
     requireAdmin(req);

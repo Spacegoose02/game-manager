@@ -59,6 +59,49 @@ Games that need setting up are listed for admins in a **Needs setting up** row o
 Running installers needs the Windows app; on Linux, run the installer with Wine yourself,
 then use **Upload an installed folder**.
 
+## Updates and DLC
+
+Patches and DLC that aren't a full game are kept out of the library and listed on the
+**Updates** page instead. LootDen recognises them two ways:
+
+- **By folder:** anything inside a top-level `Updates` (or `Patches`) folder is an update,
+  and anything inside `DLC` is DLC. A single patcher `.exe` or `.msi` counts there too.
+- **By name:** `Game Update v1.3`, `Game.Patch.v1.3-GROUP`, `Game v1.2 to v1.3`,
+  `Game Hotfix 2`, `Game Title Update 3`, `Game DLC Name`. Names like `Game incl. Update 3`
+  or `Game + 5 DLCs` are full games that already contain them.
+
+```
+/games/
+  Stardew Valley v1.5/               <- the game
+  Updates/
+    Stardew Valley v1.5 to v1.6 Patch.zip
+  DLC/
+    Hollow Knight Godmaster.zip
+```
+
+Each one is matched to its game by name. "v1.5 to v1.6" tells LootDen which version the
+update expects; a single version ("Update v1.6") is what it brings the game to. An admin can
+fix a wrong match on the update's page (**Game, update or DLC**): pick the right game, say
+there isn't one, or turn a misread entry back into a full game. One whose game isn't on the
+server shows as **Update only** and can't be installed by itself.
+
+**Applying one (desktop app):** an update's **Apply update** button (DLC: **Add to game**)
+appears once its game is installed on that PC. The app downloads it, then:
+
+- **Files:** copies them over the game. A wrapper folder (`Game v1.6/...`) is skipped so the
+  files land on the ones they replace. Every file it replaces is kept in
+  `.lootden-backup` inside the game's folder, so **Undo** puts the game back exactly. Only
+  the most recent update can be undone.
+- **Setup program:** runs it against the game's folder (Windows). These can't be undone
+  from LootDen.
+
+The app records the game's version (from the server's file name at install time, then each
+update's), and warns before applying an update made for a different version or one the
+game already has. The command-line client does the same with `lootden apply`.
+
+The Downloads importer keeps the word "Update" or "DLC" in the names it gives imports, so
+they land on the Updates page instead of replacing the game.
+
 ## Console games (Emulation)
 
 Console games go in an `Emulation` folder (or `roms`), one folder per system. Every file

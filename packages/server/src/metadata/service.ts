@@ -35,6 +35,10 @@ export class MetadataService {
   readonly steam: SteamProvider;
   readonly pcgw: PcGamingWiki;
   private queue: string[] = [];
+  /** Image downloads in progress, so simultaneous requests for one image share a download. */
+  private readonly downloads = new Map<string, Promise<{ file: string; contentType: string } | null>>();
+  /** Games already logged as having no usable artwork, so the log isn't repeated on every request. */
+  private readonly reportedMissing = new Set<string>();
   private running = false;
 
   constructor(
@@ -101,7 +105,8 @@ export class MetadataService {
     const tried = new Set(
       (this.db.prepare("SELECT game_id FROM metadata_attempts WHERE attempted_at > ?").all(cutoff) as Array<{ game_id: string }>).map((r) => r.game_id),
     );
-    const ids = games.filter((g) => !have.has(g.id) && (force || !tried.has(g.id))).map((g) => g.id);
+    // Updates and DLC show their game's details, so only full games are looked up.
+    const ids = games.filter((g) => g.kind === "game" && !have.has(g.id) && (force || !tried.has(g.id))).map((g) => g.id);
     return this.enqueue(ids);
   }
 
@@ -329,13 +334,17 @@ export class MetadataService {
       | undefined;
     const urls: string[] = [];
     if (override) urls.push(override);
-    else if (kind === "cover") {
-      if (row?.cover_url) urls.push(row.cover_url);
-      if (row?.steam_app_id) urls.push(steamHeader(row.steam_app_id));
-    } else {
+    else {
       const shots = JSON.parse(row?.screenshots ?? "[]") as string[];
-      if (shots[0]) urls.push(shots[0]);
-      if (row?.steam_app_id) urls.push(steamHeader(row.steam_app_id));
+      if (kind === "cover") {
+        // The matched cover, then Steam's portrait and header art, then a screenshot.
+        if (row?.cover_url) urls.push(row.cover_url);
+        if (row?.steam_app_id) urls.push(steamCover(row.steam_app_id), steamHeader(row.steam_app_id));
+        if (shots[0]) urls.push(shots[0]);
+      } else {
+        if (shots[0]) urls.push(shots[0]);
+        if (row?.steam_app_id) urls.push(steamHeader(row.steam_app_id));
+      }
     }
     if (!urls.length) return null;
     const dir = path.join(this.dataDir, kind === "cover" ? "covers" : "backgrounds");
@@ -346,13 +355,32 @@ export class MetadataService {
     } catch {
       // not cached yet
     }
+    let pending = this.downloads.get(file);
+    if (!pending) {
+      pending = this.download(urls, dir, file).finally(() => this.downloads.delete(file));
+      this.downloads.set(file, pending);
+    }
+    const image = await pending;
+    const key = `${gameId}:${kind}`;
+    if (image) this.reportedMissing.delete(key);
+    else if (!this.reportedMissing.has(key)) {
+      this.reportedMissing.add(key);
+      this.log.warn({ gameId, kind, tried: urls }, "No artwork could be downloaded for this game; it shows a placeholder until Find metadata picks new art");
+    }
+    return image;
+  }
+
+  /** Downloads the first address that returns an image into `file`. */
+  private async download(urls: string[], dir: string, file: string): Promise<{ file: string; contentType: string } | null> {
     for (const url of urls) {
       const res = await this.fetchImpl(url, { signal: AbortSignal.timeout(20_000) }).catch(() => null);
       if (!res?.ok) continue;
       const contentType = res.headers.get("content-type") ?? "image/jpeg";
       if (!contentType.startsWith("image/")) continue;
+      const body = Buffer.from(await res.arrayBuffer().catch(() => new ArrayBuffer(0)));
+      if (!body.length) continue;
       await mkdir(dir, { recursive: true });
-      await writeFile(`${file}.tmp`, Buffer.from(await res.arrayBuffer()));
+      await writeFile(`${file}.tmp`, body);
       await rename(`${file}.tmp`, file);
       await writeFile(`${file}.type`, contentType);
       return { file, contentType };

@@ -15,6 +15,7 @@ import { PlayInBrowser } from "./pages/PlayInBrowser";
 import { GameDetail } from "./pages/GameDetail";
 import { Home } from "./pages/Home";
 import { Library } from "./pages/Library";
+import { Updates } from "./pages/Updates";
 import { Login } from "./pages/Login";
 import { News } from "./pages/News";
 import { Profile } from "./pages/Profile";
@@ -46,6 +47,7 @@ export function App() {
       >
         <Route index element={<Home />} />
         <Route path="library" element={<Library />} />
+        <Route path="updates" element={<Updates />} />
         <Route path="games/:id" element={<GameDetail />} />
         <Route path="news" element={<News />} />
         <Route path="discover" element={<Discover />} />

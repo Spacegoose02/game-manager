@@ -1,13 +1,15 @@
 import { createHash } from "node:crypto";
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
-import { archiveKindOf, PC_PLATFORM, platformFor, romTitle, setupKindOf, type GameFile, type GameSummary } from "@lootden/shared";
+import { archiveKindOf, packageInfo, PC_PLATFORM, platformFor, romTitle, setupKindOf, type GameFile, type GameSummary } from "@lootden/shared";
 
 /** What the scanner knows from disk alone; the library adds database and metadata fields. */
 export type ScannedGame = Pick<
   GameSummary,
-  "id" | "title" | "source" | "layout" | "platform" | "sizeBytes" | "fileCount" | "packed" | "needsSetup" | "modifiedAt"
+  "id" | "title" | "source" | "layout" | "platform" | "sizeBytes" | "fileCount" | "packed" | "needsSetup" | "modifiedAt" | "kind" | "version" | "fromVersion"
 > & {
+  /** For updates and DLC: the game's name without the update wording, for finding the base game. */
+  baseTitle: string;
   files: GameFile[];
   /** The game folder's (or file's) own "Date modified", which moves when a game is copied in. */
   entryModifiedAt: string;
@@ -26,6 +28,17 @@ export function titleFromSource(source: string, isArchive: boolean): string {
   if (isArchive) name = name.replace(/(\.part\d+)?\.(zip|7z|rar)(\.\d{3})?$/i, "");
   name = name.replace(/[._]+/g, " ").replace(/\s+/g, " ").trim();
   return name || source;
+}
+
+/** "Cyberpunk.2077.Update.v2.1-GOG.zip" -> "Cyberpunk 2077 Update v2.1": keeps the dots in version numbers. */
+export function packageTitle(name: string): string {
+  const t = name
+    .replace(/(\.part\d+)?\.(zip|7z|rar|exe|msi)(\.\d{3})?$/i, "")
+    .replace(/-[A-Z0-9]{2,}$/, "")
+    .replace(/(?<!\d)\.|\.(?!\d)|_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return t || name;
 }
 
 async function walk(root: string, rel = ""): Promise<GameFile[]> {
@@ -53,14 +66,31 @@ async function walk(root: string, rel = ""): Promise<GameFile[]> {
 
 /** Top-level folders that hold emulated systems instead of being a game. */
 export const EMULATION_FOLDERS = /^(emulation|roms)$/i;
+/** Top-level folders whose entries are all updates (or DLC) for other games. */
+export const UPDATE_FOLDERS = /^(updates|patches)$/i;
+export const DLC_FOLDERS = /^dlcs?$/i;
 
-function summarize(id: string, source: string, layout: ScannedGame["layout"], files: GameFile[], platform: string, entryModifiedAt: string): ScannedGame {
+function summarize(
+  id: string,
+  source: string,
+  layout: ScannedGame["layout"],
+  files: GameFile[],
+  platform: string,
+  entryModifiedAt: string,
+  folderHint?: "update" | "dlc",
+): ScannedGame {
   files.forEach((f, i) => (f.index = i));
   const newest = files.reduce((max, f) => (f.modifiedAt > max ? f.modifiedAt : max), "");
   const name = path.posix.basename(source);
+  // Update and DLC packages are recognised by name ("Game Update v1.3") or by sitting in an Updates or DLC folder.
+  const pkg = platform === PC_PLATFORM ? packageInfo(name, folderHint) : { kind: "game" as const, baseTitle: name, version: null, fromVersion: null };
   return {
+    kind: pkg.kind,
+    baseTitle: pkg.baseTitle,
+    version: pkg.version,
+    fromVersion: pkg.fromVersion,
     id,
-    title: platform === PC_PLATFORM ? titleFromSource(name, layout === "archive") : romTitle(name, layout !== "folder") || name,
+    title: pkg.kind !== "game" ? packageTitle(name) : platform === PC_PLATFORM ? titleFromSource(name, layout === "archive") : romTitle(name, layout !== "folder") || name,
     source,
     layout,
     platform,
@@ -68,7 +98,8 @@ function summarize(id: string, source: string, layout: ScannedGame["layout"], fi
     fileCount: files.length,
     packed: files.some((f) => f.archive !== undefined),
     // Emulators play disc images as they are; only PC discs and installers need setting up.
-    needsSetup: platform === PC_PLATFORM ? setupKindOf(files) : null,
+    // An update's setup program runs over the installed game, so it isn't one to set up on the server.
+    needsSetup: platform === PC_PLATFORM && pkg.kind === "game" ? setupKindOf(files) : null,
     modifiedAt: newest || new Date(0).toISOString(),
     entryModifiedAt,
     files,
@@ -86,6 +117,15 @@ export async function scanLibrary(gamesDir: string): Promise<ScannedGame[]> {
     if (IGNORED.test(entry.name)) continue;
     if (entry.isDirectory() && EMULATION_FOLDERS.test(entry.name)) {
       games.push(...(await scanEmulation(gamesDir, entry.name)));
+      continue;
+    }
+    if (entry.isDirectory() && (UPDATE_FOLDERS.test(entry.name) || DLC_FOLDERS.test(entry.name))) {
+      const hint = UPDATE_FOLDERS.test(entry.name) ? "update" : "dlc";
+      for (const inner of await readdir(path.join(gamesDir, entry.name), { withFileTypes: true }).catch(() => [])) {
+        if (IGNORED.test(inner.name)) continue;
+        const pkg = await scanEntry(gamesDir, `${entry.name}/${inner.name}`, inner.isDirectory(), PC_PLATFORM, hint);
+        if (pkg) games.push(pkg);
+      }
       continue;
     }
     const game = await scanEntry(gamesDir, entry.name, entry.isDirectory(), PC_PLATFORM);
@@ -112,21 +152,22 @@ async function scanEmulation(gamesDir: string, folder: string): Promise<ScannedG
   return games;
 }
 
-async function scanEntry(gamesDir: string, source: string, isDir: boolean, platform: string): Promise<ScannedGame | null> {
+async function scanEntry(gamesDir: string, source: string, isDir: boolean, platform: string, folderHint?: "update" | "dlc"): Promise<ScannedGame | null> {
   const full = path.join(gamesDir, source);
   const name = path.posix.basename(source);
   try {
     if (isDir) {
       const files = await walk(full);
       // Unpacked files keep the dates from inside the archive, so the folder's own date says when it arrived.
-      return files.length ? summarize(gameIdFor(source), source, "folder", files, platform, (await stat(full)).mtime.toISOString()) : null;
+      return files.length ? summarize(gameIdFor(source), source, "folder", files, platform, (await stat(full)).mtime.toISOString(), folderHint) : null;
     }
     const archive = archiveKindOf(name);
     // Loose files at the top are only games when they're archives; inside a platform folder any file is a ROM.
-    if (!archive && platform === PC_PLATFORM) return null;
+    // A patch can be a single setup program, so loose .exe/.msi files count inside an Updates or DLC folder.
+    if (!archive && platform === PC_PLATFORM && !(folderHint && /\.(exe|msi)$/i.test(name))) return null;
     const s = await stat(full);
     if (!s.isFile()) return null;
-    return summarize(gameIdFor(source), source, archive ? "archive" : "file", [{ index: 0, path: name, size: s.size, modifiedAt: s.mtime.toISOString(), archive }], platform, s.mtime.toISOString());
+    return summarize(gameIdFor(source), source, archive ? "archive" : "file", [{ index: 0, path: name, size: s.size, modifiedAt: s.mtime.toISOString(), archive }], platform, s.mtime.toISOString(), folderHint);
   } catch (err) {
     // One unreadable folder should not take down the whole library.
     console.warn(`Skipping ${source}: ${(err as Error).message}`);

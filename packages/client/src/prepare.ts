@@ -64,7 +64,7 @@ export async function installerArgs(setup: string, target: string): Promise<stri
 /** Zips a folder's contents with 7-Zip (store-fast: games barely compress). */
 export function zipFolder(sevenZip: SevenZip, folder: string, zipPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(sevenZip.path, ["a", "-tzip", "-mx1", "-bd", "-y", zipPath, "*"], { cwd: folder, stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
+    const child = spawn(sevenZip.path, ["a", "-tzip", "-mx1", "-bd", "-y", zipPath, "*", "-xr!.lootden-backup"], { cwd: folder, stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
     let err = "";
     child.stderr.on("data", (d) => (err += d.toString()));
     child.on("error", reject);

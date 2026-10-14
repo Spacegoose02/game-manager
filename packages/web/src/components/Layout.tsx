@@ -25,6 +25,7 @@ export function Layout() {
             Home
           </NavLink>
           <NavLink to="/library">Library</NavLink>
+          <NavLink to="/updates">Updates</NavLink>
           <NavLink to="/emulation">Emulation</NavLink>
           {!me?.user?.kidMode && <NavLink to="/discover">Discover</NavLink>}
           {!me?.user?.kidMode && <NavLink to="/wishlist">Wishlist</NavLink>}

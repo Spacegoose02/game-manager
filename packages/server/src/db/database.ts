@@ -280,6 +280,11 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX source_items_source ON source_items(source, seen_at);
   `,
+  `
+  -- Admin corrections for update and DLC packages: what an entry is, and which game it belongs to ("none" = no game).
+  ALTER TABLE games ADD COLUMN kind_override TEXT;
+  ALTER TABLE games ADD COLUMN base_game_override TEXT;
+  `,
 ];
 
 export function openDatabase(file: string): Db {

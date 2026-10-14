@@ -59,6 +59,9 @@ lootden install "Stardew Valley" --dest D:\Games
 lootden play "Stardew Valley"
 lootden installed
 lootden uninstall "Stardew Valley"
+lootden updates                     # updates and DLC, and which fit your installs
+lootden apply "Stardew Valley v1.5 to v1.6 Patch"
+lootden undo-update "Stardew Valley v1.5 to v1.6 Patch"
 lootden help
 ```
 

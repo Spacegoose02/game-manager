@@ -12,6 +12,9 @@ import { findExecutable, launchAndTrack, saveExecutable } from "./launcher.js";
 import { backupSaves, expandSavePath, restoreSaves } from "./saves.js";
 import { biosFromServer, emulatorOverview, EMULATORS, installEmulator, playEmulated } from "./emulators.js";
 import { configDir, envVar } from "./config.js";
+import { applyUpdate, undoUpdate, updateProblem } from "./updates.js";
+import { spawn } from "node:child_process";
+import type { GameSummary } from "@lootden/shared";
 
 /** Emulators, BIOS files and their saves for the command-line client. */
 const toolsDir = () => envVar("TOOLS_DIR") || path.join(configDir(), "emulators");
@@ -40,6 +43,10 @@ Usage:
   lootden saves <game>                    List your save backups on the server
   lootden backup <game>                   Upload this PC's saves for an installed game
   lootden restore <game> [--id N]         Restore your newest (or chosen) save backup
+  lootden updates [game]                  Updates and DLC on the server, and which fit your installs
+  lootden apply <update> [--force]        Apply an update or DLC to its installed game (keeps a backup)
+      --force                        Apply even when the versions don't line up
+  lootden undo-update <update>            Undo the most recent update applied to a game
   lootden uninstall <game>                Delete an installed game from this computer
   lootden drives                          Drives you can install to, with free space
   lootden stats                           Library size and server disk space
@@ -257,6 +264,62 @@ async function main(argv: string[]): Promise<void> {
       if (!chosen) throw new Error(`No save backups for ${game.title}`);
       const { previous } = await restoreSaves(api, sevenZip, gameId, chosen.id, dir);
       console.log(`Restored the ${chosen.createdAt} backup to ${dir}${previous ? `; your old saves are in ${previous}` : ""}`);
+      return;
+    }
+    case "updates": {
+      const addons = await api.json<GameSummary[]>("/api/games?kind=addon");
+      const installed = await listInstalled([config.installDir]);
+      const q = positional.join(" ").toLowerCase();
+      const titles = new Map((await api.listGames()).map((g) => [g.id, g.title]));
+      const shown = addons.filter((a) => !q || a.title.toLowerCase().includes(q) || (a.baseGameId && titles.get(a.baseGameId)?.toLowerCase().includes(q)));
+      for (const a of shown) {
+        const local = installed.find((g) => g.gameId === a.baseGameId);
+        const versions = a.fromVersion ? `v${a.fromVersion} -> v${a.version}` : a.version ? `v${a.version}` : "";
+        const state = !a.baseGameId
+          ? "update only: its game isn't on the server"
+          : !local
+            ? "game not installed here"
+            : (updateProblem({ ...a }, local) ?? `ready to apply (installed v${local.version ?? "?"})`);
+        console.log(`${a.id}  ${a.kind.padEnd(6)} ${formatBytes(a.sizeBytes).padStart(9)}  ${a.title}${versions ? `  ${versions}` : ""}\n      for ${a.baseGameId ? titles.get(a.baseGameId) : "?"}: ${state}`);
+      }
+      console.log(`${shown.length} update(s) and DLC`);
+      return;
+    }
+    case "apply": {
+      if (positional.length === 0) throw new Error("Which update? Usage: lootden apply <update>");
+      const update = pickGame(await api.json<GameSummary[]>("/api/games?kind=addon"), positional.join(" "));
+      if (!update.baseGameId) throw new Error(`${update.title}'s game isn't on the server, so there's nothing to apply it to`);
+      const local = (await listInstalled([config.installDir])).find((g) => g.gameId === update.baseGameId);
+      if (!local) throw new Error(`Install the game first: lootden install ${update.baseGameId}`);
+      const sevenZip = await findSevenZip(config.sevenZipPath);
+      const print = progressPrinter();
+      const r = await applyUpdate(api, update.id, local, {
+        workDir: path.join(os.tmpdir(), "lootden-updates"),
+        sevenZipPath: sevenZip?.path ?? config.sevenZipPath,
+        force: flags.force === true,
+        onEvent: (e) => (e.type === "apply" ? console.log(e.mode === "installer" ? `Running the update's setup program for ${e.target}` : `Copying into ${e.target}`) : print(e)),
+        runInstaller: (setup, target, args) =>
+          new Promise((resolve, reject) => {
+            console.log(`Starting ${path.basename(setup)}; point it at ${target} if it asks`);
+            const child = spawn(setup, args, { cwd: path.dirname(setup), stdio: "inherit" });
+            child.on("error", reject);
+            child.on("close", () => resolve());
+          }),
+      });
+      console.log(
+        r.mode === "files"
+          ? `Applied ${r.title}: ${r.replaced} file(s) replaced (backed up), ${r.added} added${r.version ? `; now v${r.version}` : ""}`
+          : `Ran ${r.title}${r.version ? `; recorded v${r.version}` : ""}`,
+      );
+      return;
+    }
+    case "undo-update": {
+      const q = positional.join(" ").toLowerCase();
+      const installed = await listInstalled([config.installDir]);
+      const hit = installed.flatMap((g) => (g.updates ?? []).map((u) => ({ g, u }))).find(({ u }) => u.id === q || u.title.toLowerCase() === q || u.title.toLowerCase().includes(q));
+      if (!hit) throw new Error(`No applied update matches "${positional.join(" ")}"`);
+      const r = await undoUpdate(hit.g, hit.u.id);
+      console.log(`Undid ${r.title} on ${hit.g.title}${r.previousVersion ? `; back to v${r.previousVersion}` : ""}`);
       return;
     }
     case "uninstall": {

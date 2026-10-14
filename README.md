@@ -36,6 +36,9 @@ on their own PC with one click, like a small private Steam.
   resume), unpacks zip / 7z / rar, deletes the archives, and tracks play time. Installers
   and disc images get a **Run installer** button, and an admin can upload the installed
   game so everyone after them gets a ready-to-play download.
+- **Updates and DLC:** patches and DLC (in an `Updates` or `DLC` folder, or named like
+  `Game Update v1.3`) get their own Updates page instead of cluttering the library. The
+  desktop app applies them over the installed game with a backup, so they can be undone.
 - **Profiles:** local accounts or single sign-on (OIDC, TinyAuth, forward auth), random
   raccoon avatars, kid profiles that only see kid-safe games, a backlog and journal per
   game, and per-profile play time.

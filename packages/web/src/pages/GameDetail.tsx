@@ -12,6 +12,8 @@ import { UpdatesPanel } from "../components/UpdatesPanel";
 import { PreparePanel } from "../components/PreparePanel";
 import { JournalPanel, ModsPanel, VersionBanner } from "../components/GameExtras";
 import { desktop } from "../desktop";
+import { UpdateActions, useInstalled, versionLabel } from "../components/UpdateActions";
+import type { GameSummary } from "@lootden/shared";
 
 export function GameDetail() {
   const { id = "" } = useParams();
@@ -20,6 +22,7 @@ export function GameDetail() {
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [params] = useSearchParams();
+  const [installed, refreshInstalled] = useInstalled();
 
   useEffect(() => {
     setGame(null);
@@ -30,6 +33,7 @@ export function GameDetail() {
   if (!game) return <p className="muted">Loading…</p>;
   const m = game.metadata;
   const command = `lootden install ${game.id}`;
+  const isAddon = game.kind !== "game";
 
   return (
     <article className="detail">
@@ -41,8 +45,21 @@ export function GameDetail() {
           <p className="muted">
             {[game.releaseYear, game.genres.join(", "), formatBytes(game.sizeBytes)].filter(Boolean).join(" · ")}
           </p>
+          {isAddon && (
+            <p className="pkg-for">
+              <span className="badge badge-muted">{game.kind === "dlc" ? "DLC" : "Update"}</span>{" "}
+              {game.baseGame ? (
+                <>
+                  for <Link to={`/games/${game.baseGame.id}`}>{game.baseGame.title}</Link>
+                </>
+              ) : (
+                "Update only: its game isn't on the server"
+              )}
+              {versionLabel(game) && <span className="muted"> · {versionLabel(game)}</span>}
+            </p>
+          )}
           <Badges game={game} />
-          {game.platform === "pc" && <VersionBanner gameId={game.id} isAdmin={me?.role === "admin"} />}
+          {game.platform === "pc" && !isAddon && <VersionBanner gameId={game.id} isAdmin={me?.role === "admin"} />}
           {m?.ageRatings.length ? (
             <p className="muted small">Age ratings: {m.ageRatings.map((r) => `${r.organization} ${r.rating}`).join(", ")}</p>
           ) : null}
@@ -57,7 +74,11 @@ export function GameDetail() {
             </div>
           )}
 
-          {desktop ? (
+          {isAddon ? (
+            <div className="install panel">
+              <UpdateActions update={game} baseTitle={game.baseGame?.title ?? null} installed={installed} onChange={refreshInstalled} />
+            </div>
+          ) : desktop ? (
             <DesktopInstall game={game} autoFocus={params.get("install") === "1"} />
           ) : (
           <div className="install panel">
@@ -83,7 +104,7 @@ export function GameDetail() {
         </div>
       </div>
 
-      {me?.user && <JournalPanel gameId={game.id} />}
+      {me?.user && !isAddon && <JournalPanel gameId={game.id} />}
 
       {m?.screenshots.length ? (
         <section className="row">
@@ -117,13 +138,34 @@ export function GameDetail() {
         </table>
       </section>
 
-      <UpdatesPanel gameId={game.id} />
+      {game.addons.length > 0 && (
+        <section className="panel">
+          <h2>Updates and DLC</h2>
+          <ul className="pkg-list">
+            {game.addons.map((u) => (
+              <li key={u.id}>
+                <div className="pkg-title">
+                  <Link to={`/games/${u.id}`}>{u.title}</Link>
+                  <span className="badge badge-muted">{u.kind === "dlc" ? "DLC" : "Update"}</span>
+                  {versionLabel(u) && <span className="muted small">{versionLabel(u)}</span>}
+                  <span className="muted small">{formatBytes(u.sizeBytes)}</span>
+                </div>
+                <UpdateActions update={u} baseTitle={game.title} installed={installed} onChange={refreshInstalled} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
-      {game.platform === "pc" && <ModsPanel gameId={game.id} />}
+      {!isAddon && <UpdatesPanel gameId={game.id} />}
 
-      <PreparePanel game={game} />
+      {game.platform === "pc" && !isAddon && <ModsPanel gameId={game.id} />}
 
-      <SavesPanel game={game} onChange={setGame} />
+      {!isAddon && <PreparePanel game={game} />}
+
+      {!isAddon && <SavesPanel game={game} onChange={setGame} />}
+
+      {me?.role === "admin" && game.platform === "pc" && <PackageAdmin game={game} onChange={setGame} />}
 
       {me?.role === "admin" && <AdminTools game={game} onChange={setGame} />}
     </article>
@@ -226,6 +268,55 @@ function AdminTools({ game, onChange }: { game: Game; onChange: (g: Game) => voi
         </label>
       </div>
       <ArtworkEditor game={game} onChange={onChange} />
+    </section>
+  );
+}
+
+/** Admin: say what an entry is (game, update or DLC) and which game an update belongs to. */
+function PackageAdmin({ game, onChange }: { game: Game; onChange: (g: Game) => void }) {
+  const [games, setGames] = useState<GameSummary[] | null>(null);
+  const [error, setError] = useState("");
+  const isAddon = game.kind !== "game";
+  useEffect(() => {
+    if (isAddon) api.games({ platform: "pc" }).then(setGames, () => setGames([]));
+  }, [isAddon]);
+  const save = (patch: { kind?: string | null; baseGameId?: string | null }) => {
+    setError("");
+    api.setPackage(game.id, patch).then(onChange, (e: Error) => setError(e.message));
+  };
+  const auto = game.packageOverrides.kind === null;
+  return (
+    <section className="panel">
+      <h2>Game, update or DLC</h2>
+      <p className="muted small">
+        Worked out from the name{auto ? "" : " (changed by an admin)"}. Updates and DLC are kept out of the library, listed under Updates, and applied over the installed game.
+      </p>
+      <div className="inline">
+        <label>
+          This is{" "}
+          <select value={game.packageOverrides.kind ?? ""} onChange={(e) => save({ kind: e.target.value || null })}>
+            <option value="">Automatic ({game.kind === "dlc" ? "DLC" : game.kind})</option>
+            <option value="game">A full game</option>
+            <option value="update">An update</option>
+            <option value="dlc">DLC</option>
+          </select>
+        </label>
+        {isAddon && (
+          <label>
+            for{" "}
+            <select value={game.packageOverrides.baseGameId ?? ""} onChange={(e) => save({ baseGameId: e.target.value || null })}>
+              <option value="">Automatic{game.packageOverrides.baseGameId === null && game.baseGame ? ` (${game.baseGame.title})` : ""}</option>
+              <option value="none">No game on the server</option>
+              {(games ?? []).map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.title}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+      </div>
+      {error && <p className="error small">{error}</p>}
     </section>
   );
 }

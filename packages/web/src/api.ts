@@ -80,6 +80,8 @@ export interface GameFilters {
   kidSafe?: boolean;
   missingMetadata?: boolean;
   platform?: string;
+  /** "update", "dlc" or "addon" (both) list packages instead of games. */
+  kind?: string;
   sort?: string;
   order?: string;
 }
@@ -433,6 +435,7 @@ export const api = {
     upload<ServerBiosFile>("PUT", `/api/emulation/bios/${encodeURIComponent(file.name)}${emulator ? `?emulator=${emulator}` : ""}`, file, "application/octet-stream"),
   deleteBios: (name: string) => call("DELETE", `/api/emulation/bios/${encodeURIComponent(name)}`),
   game: (id: string) => call<GameDetail>("GET", `/api/games/${id}`),
+  setPackage: (id: string, patch: { kind?: string | null; baseGameId?: string | null }) => call<GameDetail>("PUT", `/api/games/${id}/package`, patch),
   updateGame: (id: string, patch: { title?: string | null; kidSafe?: boolean | null; controllerSupport?: string | null }) =>
     call<GameDetail>("PATCH", `/api/games/${id}`, patch),
   searchMetadata: (id: string, q: string) => call<Candidate[]>("GET", `/api/games/${id}/metadata/search${qs({ q })}`),

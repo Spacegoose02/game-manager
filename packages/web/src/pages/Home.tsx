@@ -86,7 +86,7 @@ export function Home() {
           <div className={`hero-bg${hero.backgroundUrl ? " wide" : ""}`} style={hero.backgroundUrl || hero.coverUrl ? { backgroundImage: `url(${hero.backgroundUrl ?? hero.coverUrl})` } : undefined} />
           <div className="hero-content">
             <Link to={`/games/${hero.id}`} tabIndex={-1}>
-              <Cover game={hero} size="hero" />
+              <Cover key={hero.id} game={hero} size="hero" />
             </Link>
             <div>
               <p className="eyebrow">Featured</p>

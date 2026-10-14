@@ -2,6 +2,7 @@ import { readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { safeFolderName, setupKindOf } from "@lootden/shared";
 import { isManifest, LEGACY_MANIFEST_NAME, MANIFEST_NAME } from "./installer.js";
+import type { AppliedUpdate } from "./updates.js";
 
 export interface InstalledGame {
   gameId: string;
@@ -18,6 +19,10 @@ export interface InstalledGame {
   needsSetup?: "disc" | "installer" | null;
   /** Where the installer put the game, once it has been run. */
   installedDir?: string;
+  /** The game's version, from the server's file name at install time and raised by each update. */
+  version?: string | null;
+  /** Updates and DLC applied to this copy, oldest first. */
+  updates?: AppliedUpdate[];
 }
 
 /** The manifest file's contents: .lootden.json, or .game-manager.json from before the rename. */
@@ -44,6 +49,8 @@ async function readManifest(dir: string): Promise<InstalledGame | null> {
       source: m.source,
       needsSetup: m.needsSetup,
       installedDir: m.installedDir,
+      version: m.version ?? null,
+      updates: Array.isArray(m.updates) ? m.updates : [],
     };
   } catch {
     return null;
