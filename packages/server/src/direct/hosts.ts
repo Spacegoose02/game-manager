@@ -255,6 +255,13 @@ const UNSUPPORTED: Array<[RegExp, string]> = [
   [/(^|\.)rapidgator\.net$/i, "Rapidgator"],
 ];
 
+/** Whether LootDen can fetch from this link's host: by name, not at all, or by trying the generic way. */
+export function hostSupport(url: string): "known" | "unsupported" | "generic" {
+  const h = new URL(url).hostname;
+  if (HOSTS.some((r) => r.match.test(h))) return "known";
+  return UNSUPPORTED.some(([m]) => m.test(h)) ? "unsupported" : "generic";
+}
+
 /** Normalises pasted text into the links in it, one per line or separated by spaces. */
 export function parseLinks(text: string): string[] {
   const found = text.match(/https?:\/\/[^\s<>"']+/gi) ?? [];

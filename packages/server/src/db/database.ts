@@ -312,6 +312,10 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX direct_files_package ON direct_files(package_id, position);
   `,
+  `
+  -- Download links a release source lists for a release (JSON), so Discover can fetch it directly.
+  ALTER TABLE source_items ADD COLUMN downloads TEXT;
+  `,
 ];
 
 export function openDatabase(file: string): Db {

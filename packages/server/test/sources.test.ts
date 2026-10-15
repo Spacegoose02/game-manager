@@ -3,6 +3,7 @@ import { rm } from "node:fs/promises";
 import { after, before, describe, it } from "node:test";
 import { gogNew, itchNew } from "../src/sources/adapters/feeds.js";
 import { jsonFeed } from "../src/sources/adapters/json-feed.js";
+import { cleanDownloads, planDownload } from "../src/sources/download.js";
 import { isoDate, parseFeed } from "../src/sources/adapters/util.js";
 import { isPrivateAddress, paginate, SourceClient } from "../src/sources/client.js";
 import type { SourceConfig } from "../src/sources/types.js";
@@ -113,5 +114,63 @@ describe("release sources", () => {
     // Switched off: nothing on Discover.
     await app.inject({ method: "PUT", url: "/api/sources/json-feed", headers, payload: { enabled: false } });
     assert.deepEqual((await app.inject({ url: "/api/sources/latest", headers })).json(), []);
+  });
+
+  it("picks a release's own link: a known file host, then a torrent, never one it didn't list", () => {
+    const downloads = cleanDownloads([
+      { title: "Game", uris: ["https://gofile.io/d/x", "magnet:?xt=urn:btih:abc", "https://www.mediafire.com/file/k/Game.rar/file", "javascript:alert(1)", " "] },
+      { title: "empty", uris: [] },
+    ]);
+    assert.deepEqual(downloads, [{ title: "Game", uris: ["https://gofile.io/d/x", "magnet:?xt=urn:btih:abc", "https://www.mediafire.com/file/k/Game.rar/file"], size: null }]);
+    assert.deepEqual(planDownload(downloads, { torrents: true }), { via: "direct", url: "https://www.mediafire.com/file/k/Game.rar/file" });
+    assert.deepEqual(planDownload(downloads, { torrents: true, uri: "magnet:?xt=urn:btih:abc" }), { via: "torrent", url: "magnet:?xt=urn:btih:abc" });
+    assert.throws(() => planDownload(downloads, { torrents: true, uri: "https://evil.example/x.rar" }), /isn't one this release lists/);
+    assert.throws(() => planDownload(downloads, { torrents: true, uri: "https://gofile.io/d/x" }), /can't download from that host/);
+    const torrentOnly = [{ uris: ["magnet:?xt=urn:btih:abc", "https://gofile.io/d/x"] }];
+    assert.deepEqual(planDownload(torrentOnly, { torrents: true }), { via: "torrent", url: "magnet:?xt=urn:btih:abc" });
+    assert.throws(() => planDownload(torrentOnly, { torrents: false }), /set up a torrent client/);
+    assert.deepEqual(planDownload([{ uris: ["https://cdn.example/Game.zip"] }], { torrents: false }), { via: "direct", url: "https://cdn.example/Game.zip" });
+    assert.throws(() => planDownload(undefined, { torrents: true }), /no download links/);
+  });
+
+  it("keeps a source's download links and starts one from Discover", async () => {
+    let links = ["https://www.mediafire.com/file/k/Linked.Game.rar/file"];
+    const fetchImpl = (async (input: string | URL | Request) => {
+      if (new URL(String(input)).hostname !== "nas.lan") return new Response("nope", { status: 404 });
+      return Response.json({ items: [{ id: "l", title: "Linked Game", downloads: [{ title: "Linked.Game", uris: links, fileSize: "2 GB" }] }, { id: "n", title: "No Links" }] });
+    }) as typeof fetch;
+    const { app, ctx } = await makeApp(root, { apiToken: "svc" }, { fetchImpl });
+    const headers = { authorization: "Bearer svc" };
+    await app.inject({ method: "PUT", url: "/api/sources/json-feed", headers, payload: { enabled: true, baseUrl: "http://nas.lan/releases.json", onMyNetwork: true } });
+    await app.inject({ method: "POST", url: "/api/sources/json-feed/test", headers });
+
+    const latest: Array<{ id: string; title: string; downloads?: Array<{ uris: string[]; size: string | null }> }> = (await app.inject({ url: "/api/sources/latest", headers })).json();
+    const linked = latest.find((r) => r.title === "Linked Game")!;
+    const none = latest.find((r) => r.title === "No Links")!;
+    assert.deepEqual(linked.downloads, [{ title: "Linked.Game", uris: links, size: "2 GB" }]);
+    assert.equal(none.downloads, undefined);
+
+    // A release seen before picks up its current links on the next refresh.
+    links = ["magnet:?xt=urn:btih:abc", "https://www.mediafire.com/file/k/Linked.Game.rar/file"];
+    await ctx.sources.refresh("json-feed");
+    assert.deepEqual(ctx.sources.item(linked.id)!.downloads![0]!.uris, links);
+
+    const noLinks = await app.inject({ method: "POST", url: "/api/sources/download", headers, payload: { id: none.id } });
+    assert.equal(noLinks.statusCode, 400);
+    assert.match(noLinks.json().error, /no download links/);
+    assert.equal((await app.inject({ method: "POST", url: "/api/sources/download", headers, payload: { id: "nope" } })).statusCode, 404);
+    const forged = await app.inject({ method: "POST", url: "/api/sources/download", headers, payload: { id: linked.id, uri: "https://evil.example/a.rar" } });
+    assert.match(forged.json().error, /isn't one this release lists/);
+    // No torrent client set up, so the magnet can't be chosen.
+    const magnet = await app.inject({ method: "POST", url: "/api/sources/download", headers, payload: { id: linked.id, uri: links[0] } });
+    assert.match(magnet.json().error, /torrent client/);
+
+    const started = await app.inject({ method: "POST", url: "/api/sources/download", headers, payload: { id: linked.id } });
+    assert.equal(started.statusCode, 200);
+    assert.equal(started.json().via, "direct");
+    const pkg = ctx.direct.list()[0]!;
+    assert.equal(pkg.name, "Linked Game");
+    assert.deepEqual(pkg.files.map((f) => f.url), ["https://www.mediafire.com/file/k/Linked.Game.rar/file"]);
+    await ctx.direct.control(pkg.id, "remove").catch(() => null);
   });
 });

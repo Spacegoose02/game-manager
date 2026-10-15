@@ -159,6 +159,8 @@ export interface SourceRelease {
   image?: string | null;
   summary?: string | null;
   details?: Record<string, string>;
+  /** The source's own links to the release (mirrors), when it gives any. */
+  downloads?: Array<{ title?: string | null; uris: string[]; size?: string | null }>;
   seenAt: string;
 }
 
@@ -558,6 +560,7 @@ export const api = {
   saveSource: (id: string, c: Partial<SourceConfig>) => call<ReleaseSourceView>("PUT", `/api/sources/${id}`, c),
   testSource: (id: string) => call<{ message: string; sources: ReleaseSourceView[] }>("POST", `/api/sources/${id}/test`),
   sourceReleases: (limit = 40) => call<SourceRelease[]>("GET", `/api/sources/latest${qs({ limit: String(limit) })}`),
+  downloadSourceRelease: (id: string, uri?: string) => call<{ via: "direct" | "torrent"; message: string }>("POST", "/api/sources/download", { id, uri }),
   libraryStats: () => call<LibraryStatsDetail>("GET", "/api/stats/library"),
   addWishFeed: (url: string, name?: string) => call<WishlistState>("POST", "/api/wishlist/feeds", { url, name }),
   removeWishFeed: (id: number) => call<WishlistState>("DELETE", `/api/wishlist/feeds/${id}`),

@@ -6,6 +6,7 @@ import { cleanTitle } from "../metadata/titles.js";
 import type { WishlistService } from "../news/wishlist.js";
 import { ADAPTERS } from "./adapters/index.js";
 import { SourceClient } from "./client.js";
+import { cleanDownloads } from "./download.js";
 import type { ReleaseInfo, ReleaseSource, SourceConfig } from "./types.js";
 
 const KEY = "sources";
@@ -137,11 +138,18 @@ export class SourceRegistry {
   private store(a: ReleaseSource, items: ReleaseInfo[]): ReleaseInfo[] {
     const fresh: ReleaseInfo[] = [];
     const exists = this.db.prepare("SELECT 1 FROM source_items WHERE id = ?");
-    const insert = this.db.prepare("INSERT INTO source_items (id, source, title, date, platform, url, image, summary, details, seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    const insert = this.db.prepare("INSERT INTO source_items (id, source, title, date, platform, url, image, summary, details, downloads, seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    // Links change (mirrors die, new ones get added), so a release seen before still gets the current ones.
+    const relink = this.db.prepare("UPDATE source_items SET downloads = ? WHERE id = ?");
     for (const r of items) {
       const id = `${a.id}|${r.id}`.slice(0, 500);
-      if (exists.get(id)) continue;
-      insert.run(id, a.id, r.title.slice(0, 300), r.date, r.platform, r.url, r.image ?? null, r.summary ?? null, r.details ? JSON.stringify(r.details) : null, now());
+      const downloads = cleanDownloads(r.downloads);
+      const links = downloads ? JSON.stringify(downloads) : null;
+      if (exists.get(id)) {
+        relink.run(links, id);
+        continue;
+      }
+      insert.run(id, a.id, r.title.slice(0, 300), r.date, r.platform, r.url, r.image ?? null, r.summary ?? null, r.details ? JSON.stringify(r.details) : null, links, now());
       fresh.push(r);
     }
     // Keep the newest 500 per source.
@@ -183,6 +191,7 @@ export class SourceRegistry {
       image: (r.image as string | null) ?? null,
       summary: (r.summary as string | null) ?? null,
       details: json<Record<string, string> | undefined>(r.details, undefined),
+      downloads: json<StoredRelease["downloads"]>(r.downloads, undefined),
       seenAt: String(r.seen_at),
     };
   }
@@ -195,6 +204,12 @@ export class SourceRegistry {
       .prepare(`SELECT * FROM source_items WHERE source IN (${on.map(() => "?").join(",")}) ORDER BY COALESCE(date, substr(seen_at, 1, 10)) DESC, seen_at DESC LIMIT ?`)
       .all(...on, limit) as Array<Record<string, unknown>>;
     return rows.map((r) => this.row(r));
+  }
+
+  /** One stored release, by the id Discover shows. */
+  item(id: string): StoredRelease | undefined {
+    const r = this.db.prepare("SELECT * FROM source_items WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    return r && this.row(r);
   }
 
   /** Stored releases whose title matches (for a wishlist game or a Discover page). */

@@ -1,5 +1,14 @@
 import type { SourceClient } from "./client.js";
 
+/** One downloadable file a source lists for a release: its links are mirrors of each other. */
+export interface ReleaseDownload {
+  title?: string | null;
+  /** magnet: links, .torrent URLs or file-host / direct http(s) links. */
+  uris: string[];
+  /** As the source wrote it ("12.3 GB"). */
+  size?: string | null;
+}
+
 /** One release as LootDen shows it, whatever source it came from. */
 export interface ReleaseInfo {
   /** Stable within its source (an id, or the URL); used to alert only once. */
@@ -14,6 +23,8 @@ export interface ReleaseInfo {
   summary?: string | null;
   /** Small extra facts to show as "label: value" (store, price, version…). */
   details?: Record<string, string>;
+  /** Links the source gives to fetch the release itself; Discover then offers Download. */
+  downloads?: ReleaseDownload[];
 }
 
 /** What the admin set for a source in Settings, Sources. */

@@ -12,7 +12,8 @@
  *
  *   { "items": [ { "id": "1", "title": "Some Game", "date": "2026-10-13",
  *                  "platform": "pc", "url": "https://…", "image": "https://…",
- *                  "summary": "…", "details": { "Store": "GOG" } } ],
+ *                  "summary": "…", "details": { "Store": "GOG" },
+ *                  "downloads": [ { "title": "…", "uris": ["magnet:?…", "https://…"], "fileSize": "4 GB" } ] } ],
  *     "next_url": "https://…?page=2" }
  *
  * If the source needs a key, it is sent as "Authorization: Bearer <key>".
@@ -34,6 +35,8 @@ interface FeedItem {
   summary?: string;
   content_text?: string;
   details?: Record<string, unknown>;
+  /** Links to the release itself (Hydra-style): [{ title, uris: ["magnet:…", "https://…"], fileSize }]. */
+  downloads?: Array<{ title?: string; uris?: unknown; fileSize?: string; size?: string }>;
 }
 
 function toRelease(item: FeedItem, base: string): ReleaseInfo | null {
@@ -50,6 +53,9 @@ function toRelease(item: FeedItem, base: string): ReleaseInfo | null {
     image: item.image ?? item.banner_image ?? null,
     summary: (item.summary ?? item.content_text ?? "").slice(0, 300) || null,
     details,
+    downloads: Array.isArray(item.downloads)
+      ? item.downloads.map((d) => ({ title: d.title ?? null, uris: Array.isArray(d.uris) ? d.uris.map(String) : [], size: d.fileSize ?? d.size ?? null }))
+      : undefined,
   };
 }
 
