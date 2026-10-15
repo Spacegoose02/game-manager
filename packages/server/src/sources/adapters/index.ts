@@ -2,6 +2,7 @@ import type { ReleaseSource } from "../types.js";
 import { gogNew, itchNew, rssFeed } from "./feeds.js";
 import { jsonFeed } from "./json-feed.js";
 import { xrel } from "./xrel.js";
+import { ankerGames } from "./ankergames.js";
 
 /**
  * Every release source LootDen knows. Add yours to this list; it then shows up in
@@ -13,4 +14,5 @@ export const ADAPTERS: ReleaseSource[] = [
   rssFeed, 
   jsonFeed, 
   xrel,
+  ankerGames,
 ];
