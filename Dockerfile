@@ -40,9 +40,24 @@ COPY --from=build /app/packages/shared/dist packages/shared/dist
 COPY --from=build /app/packages/server/dist/src packages/server/dist/src
 COPY --from=build /app/packages/web/dist packages/web/dist
 COPY docker-entrypoint.sh /usr/local/bin/
-# 7-Zip unpacks and re-zips finished downloads during import. The entrypoint is made
-# executable with Unix line endings here, because a Windows checkout can lose both.
-RUN apk add --no-cache 7zip && mkdir -p /games /data \
+# 7-Zip unpacks and re-zips finished downloads during import. Alpine's 7zip package is built
+# without RAR, so releases shipped as .rar were never unpacked; the official static build from
+# 7-zip.org has it, and the build fails if it ever doesn't. The entrypoint is made executable
+# with Unix line endings here, because a Windows checkout can lose both.
+ARG SEVENZIP_VERSION=2602
+ARG TARGETARCH
+RUN case "${TARGETARCH:-$(uname -m)}" in \
+      amd64|x86_64) arch=x64 ;; arm64|aarch64) arch=arm64 ;; arm|armv7l) arch=arm ;; 386|i686) arch=x86 ;; \
+      *) echo "No 7-Zip build for ${TARGETARCH:-$(uname -m)}" >&2; exit 1 ;; \
+    esac \
+    && wget -qO /tmp/7z.tar.xz "https://www.7-zip.org/a/7z${SEVENZIP_VERSION}-linux-${arch}.tar.xz" \
+    && apk add --no-cache --virtual .fetch-7z xz \
+    && xz -dc /tmp/7z.tar.xz | tar -x -C /tmp 7zzs \
+    && apk del .fetch-7z \
+    && install -m 755 /tmp/7zzs /usr/local/bin/7zz && ln -s 7zz /usr/local/bin/7z \
+    && rm -f /tmp/7z.tar.xz /tmp/7zzs \
+    && 7zz i | sed -n '/^Codecs:/,$p' | grep -qw Rar5 \
+    && mkdir -p /games /data \
     && sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
     && chmod 755 /usr/local/bin/docker-entrypoint.sh
 EXPOSE 8080
