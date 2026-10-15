@@ -14,8 +14,9 @@ after(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-const PART1 = "first-part-bytes";
-const PART2 = "second-part";
+// Real RAR volumes start with this signature; the downloader checks it.
+const PART1 = "Rar!\x1a\x07\x01\x00first-part-bytes";
+const PART2 = "Rar!\x1a\x07\x01\x00second-part";
 
 /** Fake MediaFire, Datanodes and Pixeldrain behind one fetch. */
 function fakeHosts() {
@@ -57,6 +58,8 @@ function fakeHosts() {
     if (url.hostname === "pixeldrain.com" && url.pathname.endsWith("/info")) return Response.json({ name: "readme.txt", size: 3 });
     if (url.hostname === "pixeldrain.com") return file("hey", "readme.txt");
     if (url.hostname === "files.example.com") return file("direct", "Direct.zip");
+    if (url.hostname === "empty.example.com") return file("", "Empty.Game.rar");
+    if (url.hostname === "errors.example.com") return file("Sorry, quota exceeded", "Quota.Game.rar");
     if (url.hostname === "blog.example.com") return html("<p>Just a page</p>");
     throw new Error(`Unexpected ${method} ${url}`);
   }) as typeof fetch;
@@ -145,6 +148,28 @@ describe("download manager links", () => {
     assert.equal(retry.statusCode, 200);
     await ctx.direct.idle();
     assert.equal(ctx.direct.get(id)!.status, "failed");
+    await app.close();
+  });
+  it("fails a download that came back empty or isn't really an archive, instead of importing it", async () => {
+    const { impl } = fakeHosts();
+    const { app, ctx } = await makeApp(root, { apiToken: "svc" }, { fetchImpl: impl });
+    const headers = { authorization: "Bearer svc" };
+    const before = ctx.library.list().length;
+    const empty = await app.inject({ method: "POST", url: "/api/direct", headers, payload: { links: "https://empty.example.com/get?id=1", name: "Empty Game" } });
+    const quota = await app.inject({ method: "POST", url: "/api/direct", headers, payload: { links: "https://errors.example.com/get?id=2", name: "Quota Game" } });
+    await ctx.direct.idle();
+    const a = ctx.direct.get((empty.json() as { id: number }).id)!;
+    const b = ctx.direct.get((quota.json() as { id: number }).id)!;
+    assert.equal(a.status, "failed");
+    assert.match(a.error ?? "", /Empty\.Game\.rar is empty \(0 bytes\)/);
+    assert.equal(b.status, "failed");
+    assert.match(b.error ?? "", /isn't a RAR archive/);
+    assert.equal(ctx.library.list().length, before, "nothing broken reached the library");
+    // A retry downloads the file again instead of resuming the bad one.
+    await ctx.direct.control(a.id, "retry");
+    await ctx.direct.idle();
+    assert.equal(ctx.direct.get(a.id)!.status, "failed");
+    assert.match(ctx.direct.get(a.id)!.error ?? "", /is empty/);
     await app.close();
   });
 });

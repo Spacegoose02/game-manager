@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { access, constants, readdir, rename, rm, stat } from "node:fs/promises";
+import { access, constants, open, readdir, rename, rm, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { groupArchiveSets, packageInfo, safeFolderName, setupKindOf } from "@lootden/shared";
@@ -64,6 +64,30 @@ function canUnrar(bin: string): Promise<boolean> {
     child.on("error", () => resolve(false));
     child.on("close", () => resolve(/\bRar5?\b/.test(out.split(/^Codecs:/m)[1] ?? "")));
   });
+}
+
+const SIGNATURES: Array<[RegExp, Buffer, string]> = [
+  [/\.rar$/i, Buffer.from("Rar!\x1a\x07", "latin1"), "RAR"],
+  [/\.7z(\.001)?$/i, Buffer.from([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c]), "7z"],
+];
+
+/**
+ * Why an archive file can't be a real one: empty, or not starting the way its kind always does
+ * (a host's error page saved under the file's name). Null when it looks fine.
+ */
+export async function archiveProblem(file: string, name = path.basename(file)): Promise<string | null> {
+  const s = await stat(file);
+  if (s.size === 0) return `${name} is empty (0 bytes), so the download didn't finish`;
+  const sig = SIGNATURES.find(([m]) => m.test(name));
+  if (!sig) return null;
+  const head = Buffer.alloc(sig[1].length);
+  const fh = await open(file, "r");
+  try {
+    await fh.read(head, 0, head.length, 0);
+  } finally {
+    await fh.close();
+  }
+  return head.equals(sig[1]) ? null : `${name} isn't a ${sig[2]} archive (the host probably sent an error page instead of the file)`;
 }
 
 export async function findServerSevenZip(): Promise<{ path: string; rar: boolean } | null> {
@@ -135,6 +159,13 @@ export async function tidyDownload(
 ): Promise<TidyReport> {
   const report: TidyReport = { target: "", removed: [], extracted: [], warnings: [] };
 
+  // A broken archive would be imported as a game nobody can unpack, so stop here instead.
+  const volumes = groupArchiveSets((await walk(staging)).filter((f) => !f.dir).map((f) => f.path)).flatMap((set) => set.volumes);
+  for (const v of volumes) {
+    const problem = await archiveProblem(v);
+    if (problem) throw new Error(`${problem}. Nothing was added to the library; download it again`);
+  }
+
   if (opts.extract) {
     if (!sevenZip) report.warnings.push("7-Zip isn't installed on the server, so archives were left packed");
     // Three rounds covers archive-in-archive releases without looping forever on a bad one.
@@ -158,6 +189,9 @@ export async function tidyDownload(
           report.extracted.push(path.relative(staging, set.first));
           progress = true;
         } catch (err) {
+          // The release itself not unpacking means it's damaged or passworded; archives found
+          // inside it later can be the game's own data, so those only warn.
+          if (round === 0) throw new Error(`${path.basename(set.first)} couldn't be unpacked, so nothing was added to the library: ${(err as Error).message}`);
           report.warnings.push(`${path.basename(set.first)}: ${(err as Error).message}`);
         }
       }

@@ -49,7 +49,7 @@ import { sourceRoutes } from "./routes/sources.js";
 import { DirectDownloads } from "./direct/manager.js";
 import { directRoutes } from "./routes/direct.js";
 
-export const VERSION = "0.11.1";
+export const VERSION = "0.11.2";
 
 /** Routes reachable without signing in. */
 const PUBLIC = [/^\/api\/health$/, /^\/api\/auth\//, /^\/api\/avatars\//];

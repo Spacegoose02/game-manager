@@ -320,12 +320,36 @@ describe("download tidy rules", () => {
       const games = path.join(tmp, "games");
       await mkdir(staging, { recursive: true });
       await mkdir(games);
-      await writeFile(path.join(staging, "Update.Game.v1.0.to.v1.1.rar"), "rar bytes");
+      await writeFile(path.join(staging, "Update.Game.v1.0.to.v1.1.rar"), "Rar!\x1a\x07\x01\x00rar bytes");
       const sevenZip = await findServerSevenZip();
       // A 7-Zip without the RAR decoder, as some Linux packages ship it.
       const report = await tidyDownload(staging, "Update.Game.v1.0.to.v1.1.rar", games, { stripJunk: true, extract: true, repack: "zip" }, sevenZip && { ...sevenZip, rar: false });
       assert.ok(!report.target.endsWith(".zip"), report.target);
-      assert.equal(await readFile(path.join(report.target, "Update.Game.v1.0.to.v1.1.rar"), "utf8"), "rar bytes");
+      assert.equal(await readFile(path.join(report.target, "Update.Game.v1.0.to.v1.1.rar"), "utf8"), "Rar!\x1a\x07\x01\x00rar bytes");
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to import an empty or fake archive", async () => {
+    const { tidyDownload } = await import("../src/connectors/tidy.js");
+    const tmp = await mkdtemp(path.join(os.tmpdir(), "lootden-tidy-"));
+    try {
+      const games = path.join(tmp, "games");
+      await mkdir(games);
+      const sevenZip = await findServerSevenZip();
+      for (const [file, body, error] of [
+        ["EA SPORTS College Football 27_1.0.141.rar", "", /is empty \(0 bytes\)/],
+        ["Game.part1.rar", "<html>File not found</html>", /isn't a RAR archive/],
+        ["Game.7z", "not a 7z", /couldn't be unpacked|isn't a 7z archive/],
+      ] as const) {
+        const staging = path.join(tmp, ".import-2");
+        await rm(staging, { recursive: true, force: true });
+        await mkdir(staging, { recursive: true });
+        await writeFile(path.join(staging, file), body);
+        await assert.rejects(tidyDownload(staging, file, games, { stripJunk: true, extract: true, repack: "zip" }, sevenZip), error, file);
+      }
+      assert.deepEqual(await readdir(games), [], "nothing reached the games folder");
     } finally {
       await rm(tmp, { recursive: true, force: true });
     }

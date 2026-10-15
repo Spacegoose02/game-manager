@@ -35,6 +35,10 @@ before(async () => {
     stdio: "ignore",
   });
 
+  // What a broken import left behind: a folder holding an empty archive.
+  await mkdir(path.join(games, "Empty Game"));
+  await writeFile(path.join(games, "Empty Game", "Empty.Game.rar"), "");
+
   const built = buildApp({ ...loadConfig({}), gamesDir: games, dataDir: path.join(work, "data"), apiToken: "t0ken", logLevel: "silent" }, openDatabase(":memory:"));
   app = built.app;
   ctx = built.ctx;
@@ -58,6 +62,11 @@ describe("install end to end", () => {
     assert.equal(await readFile(path.join(dir, "Game", "TS4.exe"), "utf8"), "pretend exe");
     const manifest = JSON.parse(await readFile(path.join(dir, MANIFEST_NAME), "utf8"));
     assert.equal(manifest.gameId, game.id);
+  });
+
+  it("refuses a game whose archive is empty on the server, before downloading anything", async () => {
+    const game = pickGame(await api.listGames(), "Empty Game");
+    await assert.rejects(installGame(api, game.id, { installDir: path.join(work, "client3"), keepArchives: false, sevenZipPath: "" }), /Empty\.Game\.rar is empty \(0 bytes\) on the server/);
   });
 
   it("unpacks split 7z volumes once and deletes every volume", async () => {

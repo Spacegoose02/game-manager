@@ -3,10 +3,10 @@ import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { PC_PLATFORM, platformFor } from "@lootden/shared";
+import { archiveKindOf, PC_PLATFORM, platformFor } from "@lootden/shared";
 import type { Library } from "../catalog/library.js";
 import type { DownloadManager } from "../connectors/manager.js";
-import type { ImportProgress } from "../connectors/tidy.js";
+import { archiveProblem, type ImportProgress } from "../connectors/tidy.js";
 import { now, type Db } from "../db/database.js";
 import type { FetchLike } from "../metadata/http.js";
 import { dispositionName, hostName, LinkError, parseLinks, resolveLink, urlFileName, type ResolvedLink } from "./hosts.js";
@@ -259,7 +259,8 @@ export class DirectDownloads {
     const files = this.db.prepare("SELECT * FROM direct_files WHERE package_id = ? ORDER BY position").all(pkg.id) as unknown as FileRow[];
     const used = new Set(files.filter((f) => f.status === "done" && f.file_name).map((f) => f.file_name!.toLowerCase()));
     for (const f of files) {
-      if (f.status === "done") continue;
+      // A failed import throws the files away, so a retry downloads those again.
+      if (f.status === "done" && f.file_name && (await stat(path.join(dir, f.file_name)).catch(() => null))) continue;
       if (signal.aborted) return;
       try {
         await this.fetchFile(pkg.id, f, dir, used, signal);
@@ -347,6 +348,12 @@ export class DirectDownloads {
     });
     await pipeline(Readable.fromWeb(res.body as never), count, createWriteStream(partOf(name), { flags: resumed ? "a" : "w" }), { signal });
     if (size && received < size) throw new LinkError(`The download stopped early (${received} of ${size} bytes); retry to carry on`);
+    const problem = archiveKindOf(name) ? await archiveProblem(partOf(name), name) : received === 0 ? `${name} is empty (0 bytes)` : null;
+    if (problem) {
+      // Start over on retry rather than resuming a bad file.
+      await rm(partOf(name), { force: true });
+      throw new LinkError(problem);
+    }
     await rename(partOf(name), path.join(dir, name));
     this.db.prepare("UPDATE direct_files SET status = 'done', received_bytes = ?, size_bytes = COALESCE(size_bytes, ?) WHERE id = ?").run(received, received, f.id);
   }

@@ -67,6 +67,8 @@ async function hoistSingleFolder(gameDir: string): Promise<void> {
 export async function installGame(api: GameServerClient, gameId: string, opts: InstallOptions): Promise<string> {
   const emit = opts.onEvent ?? (() => {});
   const game = await api.getGame(gameId);
+  const empty = game.files.find((f) => f.archive && f.size === 0);
+  if (empty) throw new Error(`${empty.path} is empty (0 bytes) on the server, so there's nothing to unpack. Delete it from the library and download it again.`);
   // Find 7-Zip before spending hours downloading.
   const sevenZip = game.packed ? await findSevenZip(opts.sevenZipPath) : null;
   if (game.packed && !sevenZip) throw new Error("This game is packed but 7-Zip was not found. Install 7-Zip or set sevenZipPath.");
