@@ -22,12 +22,13 @@ export function PlayInBrowser() {
           ← Back
         </Link>
         <strong>{game?.title}</strong>
-        {game && <span className="muted small">{platformFor(game.platform).name} in the browser · your save syncs with the desktop app</span>}
+        {game && <span className="muted small">{platformFor(game.platform).name} in the browser · your save syncs with the desktop app · click the game to give it the controller</span>}
         <span style={{ flex: 1 }} />
         <button onClick={() => frame.current?.contentWindow?.postMessage("lootden:save", location.origin)}>Sync save now</button>
         <button onClick={() => frame.current?.requestFullscreen()}>Fullscreen</button>
       </div>
-      <iframe ref={frame} className="play-frame" src={`/api/games/${id}/play`} title={game?.title ?? "Game"} allow="fullscreen; gamepad; autoplay" allowFullScreen />
+      {/* Focused so keys and the controller go to the game, not LootDen's menus. */}
+      <iframe ref={frame} onLoad={() => frame.current?.focus()} className="play-frame" src={`/api/games/${id}/play`} title={game?.title ?? "Game"} allow="fullscreen; gamepad; autoplay" allowFullScreen />
     </div>
   );
 }

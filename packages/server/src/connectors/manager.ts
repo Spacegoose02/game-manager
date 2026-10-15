@@ -433,6 +433,19 @@ export class DownloadManager {
     if (imported) await this.library.rescan();
   }
 
+  /**
+   * Imports something LootDen downloaded itself (the Download Manager) with the usual clean-up
+   * and virus scan. Moves it, since nothing is seeding it. Returns where it ended up.
+   */
+  async importDownloaded(source: string, name: string, platform: string | null, id: number, onProgress: ProgressFn = () => {}): Promise<string> {
+    const tidy = this.settings().import.tidy;
+    const placed = await this.importWithProgress(source, "move", name, tidy, id, platform, onProgress);
+    const target = await this.afterImport(placed, name);
+    if (!target) throw new Error("Held for review: the virus scan flagged it (see Downloads, Held for review)");
+    await this.library.rescan();
+    return target;
+  }
+
   private async importPath(source: string, mode: "copy" | "move", releaseName: string, tidy: TidyOptions, id: number, platform: string | null, key: string): Promise<string> {
     const report: ProgressFn = (p) => this.progress.set(key, p);
     try {

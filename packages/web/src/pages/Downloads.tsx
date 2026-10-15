@@ -3,11 +3,13 @@ import { Link, useSearchParams } from "react-router-dom";
 import { PLATFORMS } from "@lootden/shared";
 import { api, formatBytes, type DownloadRecord, type ScanRecord, type FolderItem, type ImportProgress, type LiveDownload, type SearchResult } from "../api";
 import { DownloadResults } from "../components/DownloadResults";
+import { LinkDownloads } from "../components/LinkDownloads";
 
 const eta = (s: number | null) => (s == null ? "" : s < 60 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(1)} h`);
 
 export function Downloads() {
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
+  const tab = params.get("tab") === "links" ? "links" : "indexers";
   const [query, setQuery] = useState(params.get("q") ?? "");
   const [results, setResults] = useState<SearchResult[] | null>(null);
   const [list, setList] = useState<{ downloads: DownloadRecord[]; other: LiveDownload[] }>({ downloads: [], other: [] });
@@ -54,8 +56,20 @@ export function Downloads() {
           Download settings
         </Link>
       </div>
+      <div className="segmented" role="radiogroup" aria-label="Kind of download">
+        <button role="radio" aria-checked={tab === "indexers"} className={tab === "indexers" ? "active" : ""} onClick={() => setParams({}, { replace: true })}>
+          Indexers and clients
+        </button>
+        <button role="radio" aria-checked={tab === "links"} className={tab === "links" ? "active" : ""} onClick={() => setParams({ tab: "links" }, { replace: true })}>
+          Download Manager
+        </button>
+      </div>
       {msg && <p className="notice">{msg}</p>}
       <HeldForReview onMessage={setMsg} />
+      {tab === "links" ? (
+        <LinkDownloads onMessage={setMsg} />
+      ) : (
+        <>
 
       <form className="panel inline" onSubmit={search}>
         <input type="search" placeholder="Search your Prowlarr indexers (usenet and torrent)" value={query} onChange={(e) => setQuery(e.target.value)} style={{ flex: 1 }} />
@@ -74,6 +88,8 @@ export function Downloads() {
       <DownloadsFolder onMessage={setMsg} />
 
       <Queue list={list} busy={busy} act={act} />
+        </>
+      )}
     </div>
   );
 }
@@ -414,7 +430,7 @@ function DownloadsFolder({ onMessage }: { onMessage: (m: string) => void }) {
 const STAGES: Record<ImportProgress["stage"], string> = { copying: "Copying", unpacking: "Unpacking", cleaning: "Cleaning up", zipping: "Zipping" };
 
 /** "Unpacking 42%" with a bar; steps that can't measure themselves show a moving bar. */
-function ImportMeter({ progress }: { progress: ImportProgress }) {
+export function ImportMeter({ progress }: { progress: ImportProgress }) {
   return (
     <div className="import-meter">
       <small>

@@ -46,8 +46,10 @@ import { NexusMods } from "./news/nexus.js";
 import { timeToBeat } from "./metadata/time-to-beat.js";
 import { SourceRegistry } from "./sources/registry.js";
 import { sourceRoutes } from "./routes/sources.js";
+import { DirectDownloads } from "./direct/manager.js";
+import { directRoutes } from "./routes/direct.js";
 
-export const VERSION = "0.8.0";
+export const VERSION = "0.11.0";
 
 /** Routes reachable without signing in. */
 const PUBLIC = [/^\/api\/health$/, /^\/api\/auth\//, /^\/api\/avatars\//];
@@ -81,6 +83,8 @@ export function buildContext(config: ServerConfig, db: Db, log: Log, opts: Build
     else if (r.path) await notifier.send("imported", `${name} is in the library`, null, "/library");
     return r.path;
   };
+  const direct = new DirectDownloads(db, library, downloads, log, opts.fetchImpl);
+  direct.onEvent = (e) => void notifier.send("failed", `Couldn't download ${e.title}`, e.message ?? null, "/downloads?tab=links");
   downloads.onEvent = (e) => void notifier.send(e.kind, e.kind === "grabbed" ? `Sent ${e.title} to the download client` : `Couldn't download ${e.title}`, e.message ?? null, "/downloads");
   return {
     config,
@@ -101,6 +105,7 @@ export function buildContext(config: ServerConfig, db: Db, log: Log, opts: Build
     videos: new VideoService(db, opts.fetchImpl),
     news: new NewsService(db, opts.fetchImpl),
     downloads,
+    direct,
     notifier,
     scanner,
     wanted: new WantedService(db, wishlist, downloads, notifier),
@@ -172,6 +177,7 @@ export function buildApp(config: ServerConfig, db: Db, opts: BuildOptions = {}):
   wishlistRoutes(app, ctx);
   extraRoutes(app, ctx);
   sourceRoutes(app, ctx);
+  directRoutes(app, ctx);
 
   const webDir = opts.webDir;
   if (webDir && existsSync(path.join(webDir, "index.html"))) {

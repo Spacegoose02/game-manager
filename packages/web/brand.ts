@@ -15,6 +15,13 @@ const find = (names: string[], fallback?: string) => {
   return fallback && existsSync(path.join(FALLBACK, fallback)) ? path.join(FALLBACK, fallback) : null;
 };
 
+/** Whether a brand file is the stock LootDen raccoon (brand/ ships a copy of it). */
+function isBuiltIn(file: string | null): boolean {
+  if (!file || path.extname(file) !== ".svg") return false;
+  const stock = path.join(FALLBACK, "logo.svg");
+  return file === stock || readFileSync(file, "utf8") === readFileSync(stock, "utf8");
+}
+
 export function brandFiles() {
   const logo = find(["logo.svg", "logo.png", "logo.webp"], "logo.svg");
   const files: Record<string, string | null> = {
@@ -32,7 +39,8 @@ export function brandPlugin(): Plugin {
   const { files, urls } = brandFiles();
   return {
     name: "lootden-brand",
-    config: () => ({ define: { __BRAND__: JSON.stringify({ logo: urls.logo, wordmark: urls.wordmark }) } }),
+    // The built-in raccoon is drawn inline so it takes the theme's colours; your own logo stays as it is.
+    config: () => ({ define: { __BRAND__: JSON.stringify({ logo: urls.logo, wordmark: urls.wordmark, raccoon: isBuiltIn(files.logo), raccoonFavicon: isBuiltIn(files.favicon) }) } }),
     transformIndexHtml: () =>
       [
         urls.favicon && { tag: "link", attrs: { rel: "icon", type: TYPES[path.extname(urls.favicon)], href: urls.favicon }, injectTo: "head" as const },

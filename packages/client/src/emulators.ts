@@ -408,6 +408,12 @@ export async function planLaunch(gameDir: string, platformId: string, opts: Tool
           `sort_savestates_enable = "false"`,
           `sort_savefiles_by_content_enable = "false"`,
           `sort_savestates_by_content_enable = "false"`,
+          // Controllers: RetroArch's own profiles map any pad it recognises. Select+Start quits
+          // back to LootDen and L3+R3 opens the menu, so nothing needs a keyboard.
+          `input_autodetect_enable = "true"`,
+          `input_quit_gamepad_combo = "4"`,
+          `input_menu_toggle_gamepad_combo = "2"`,
+          `pause_nonactive = "false"`,
           "",
         ].join("\n"),
       );
@@ -416,8 +422,10 @@ export async function planLaunch(gameDir: string, platformId: string, opts: Tool
     case "duckstation":
       // Memory cards named after the game file, the same name the browser player uses, so both share one card.
       await setIni(path.join(dataDir, "settings.ini"), "MemoryCards", { Card1Type: "PerGameFileTitle" });
+      await bindController(path.join(dataDir, "settings.ini"), DUCKSTATION_PAD);
       return { emulator, exe, rom, dataDir, args: ["-batch", "-fullscreen", "--", rom], saveDirs: ["memcards", "savestates"], savePrefix: null };
     case "pcsx2":
+      await bindController(path.join(dataDir, "inis", "PCSX2.ini"), PCSX2_PAD);
       return { emulator, exe, rom, dataDir, args: ["-batch", "-fullscreen", "--", rom], saveDirs: ["memcards", "sstates"], savePrefix: null };
     case "rpcs3":
       return { emulator, exe, rom, dataDir, args: ["--no-gui", rom], saveDirs: ["dev_hdd0/home/00000001/savedata"], savePrefix: null };
@@ -436,6 +444,72 @@ export async function planLaunch(gameDir: string, platformId: string, opts: Tool
     default:
       throw new Error(`Don't know how to start ${emulator.name}`);
   }
+}
+
+/** The first controller on player 1, as SDL sees it (Xbox layout names; PlayStation and Switch pads map the same way). */
+const PS_BUTTONS = {
+  Up: "SDL-0/DPadUp",
+  Down: "SDL-0/DPadDown",
+  Left: "SDL-0/DPadLeft",
+  Right: "SDL-0/DPadRight",
+  Cross: "SDL-0/A",
+  Circle: "SDL-0/B",
+  Square: "SDL-0/X",
+  Triangle: "SDL-0/Y",
+  Select: "SDL-0/Back",
+  Start: "SDL-0/Start",
+  L1: "SDL-0/LeftShoulder",
+  R1: "SDL-0/RightShoulder",
+  L2: "SDL-0/+LeftTrigger",
+  R2: "SDL-0/+RightTrigger",
+  L3: "SDL-0/LeftStick",
+  R3: "SDL-0/RightStick",
+  LLeft: "SDL-0/-LeftX",
+  LRight: "SDL-0/+LeftX",
+  LUp: "SDL-0/-LeftY",
+  LDown: "SDL-0/+LeftY",
+  RLeft: "SDL-0/-RightX",
+  RRight: "SDL-0/+RightX",
+  RUp: "SDL-0/-RightY",
+  RDown: "SDL-0/+RightY",
+};
+
+export interface PadSetup {
+  /** INI sections to fill: the pad itself, plus switches that turn SDL controllers on. */
+  pad: { section: string; values: Record<string, string> };
+  extra: Array<{ section: string; values: Record<string, string> }>;
+}
+
+const DUCKSTATION_PAD: PadSetup = {
+  pad: { section: "Pad1", values: { Type: "AnalogController", ...PS_BUTTONS, Analog: "SDL-0/Guide", SmallMotor: "SDL-0/SmallMotor", LargeMotor: "SDL-0/LargeMotor" } },
+  extra: [{ section: "InputSources", values: { SDL: "true", XInput: "false" } }],
+};
+
+const PCSX2_PAD: PadSetup = {
+  pad: { section: "Pad1", values: { Type: "DualShock2", ...PS_BUTTONS, Analog: "SDL-0/Guide", SmallMotor: "SDL-0/SmallMotor", LargeMotor: "SDL-0/LargeMotor" } },
+  extra: [
+    { section: "InputSources", values: { SDL: "true", XInput: "false" } },
+    // The first-run wizard would otherwise pop up in front of the game.
+    { section: "UI", values: { SetupWizardIncomplete: "false" } },
+  ],
+};
+
+/**
+ * Puts the first controller on player 1, unless the player already bound a controller there
+ * (then their own setup stays). Without this a fresh emulator only listens to the keyboard.
+ */
+export async function bindController(file: string, setup: PadSetup): Promise<boolean> {
+  const text = await readFile(file, "utf8").catch(() => "");
+  const lines = text.split(/\r?\n/);
+  const start = lines.findIndex((l) => l.trim().toLowerCase() === `[${setup.pad.section.toLowerCase()}]`);
+  if (start >= 0) {
+    const end = lines.findIndex((l, i) => i > start && /^\s*\[/.test(l));
+    const body = lines.slice(start + 1, end < 0 ? undefined : end);
+    if (body.some((l) => /=\s*(SDL|XInput|DInput)-\d/i.test(l))) return false;
+  }
+  for (const x of setup.extra) await setIni(file, x.section, x.values);
+  await setIni(file, setup.pad.section, setup.pad.values);
+  return true;
 }
 
 /** Sets keys in one section of an INI file, keeping everything else the emulator wrote. */

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { formatBytes } from "../api";
 import { bridgeError, desktop, type AppSettings, type AppUpdate } from "../desktop";
 
@@ -33,7 +34,7 @@ function updateLine(u: AppUpdate): string {
     case "error":
       return `Couldn't update: ${u.error ?? "unknown error"}`;
     case "unsupported":
-      return "This copy (a .deb or a copy run from source) can't update itself; install new versions from Get the app.";
+      return "This copy (a .deb or a copy run from source) can't update itself; install new versions from the app downloads page (below).";
     default:
       return "";
   }
@@ -95,6 +96,9 @@ export function AppOptions() {
           )
         )}
       </div>
+      <p className="muted small">
+        <Link to="/apps">Playnite extension and app downloads</Link> for your other PCs.
+      </p>
       <div className="inline">
         <button className="danger" onClick={() => void run(() => bridge.quit!())}>
           Exit LootDen

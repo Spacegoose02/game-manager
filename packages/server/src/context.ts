@@ -25,6 +25,7 @@ import type { JournalStore } from "./users/journal.js";
 import type { NexusMods } from "./news/nexus.js";
 import type { TimeToBeat } from "./metadata/time-to-beat.js";
 import type { SourceRegistry } from "./sources/registry.js";
+import type { DirectDownloads } from "./direct/manager.js";
 
 /** Everything route modules need, built once in buildApp. */
 export interface AppContext {
@@ -37,6 +38,8 @@ export interface AppContext {
   metadata: MetadataService;
   news: NewsService;
   downloads: DownloadManager;
+  /** Download Manager: games fetched from file-host links. */
+  direct: DirectDownloads;
   integrations: Integrations;
   clients: ClientDownloads;
   saves: SaveStore;

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { updateFavicon, type LogoStyle } from "./components/BrandLogo";
 
 /**
  * Themes are sets of CSS variables (see the token list in styles.css). Each one only
@@ -126,14 +127,22 @@ export function useTheme() {
   const coarse = typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches;
   const [touch, setTouch] = useState<"on" | "off">(() => (read("gm-touch", coarse ? "on" : "off") as "on" | "off"));
 
+  const [logo, setLogo] = useState<LogoStyle>(() => (read("gm-logo", "theme") === "raccoon" ? "raccoon" : "theme"));
+
   useEffect(() => {
     apply(theme);
     write("gm-theme", theme);
   }, [theme]);
+  // The raccoon follows the theme's colours, or keeps a real raccoon's black, grey and white.
+  useEffect(() => {
+    document.documentElement.dataset.logo = logo;
+    write("gm-logo", logo);
+    updateFavicon(logo);
+  }, [theme, logo]);
   useEffect(() => {
     document.documentElement.dataset.touch = touch;
     write("gm-touch", touch);
   }, [touch]);
 
-  return { theme, setTheme, touch, setTouch };
+  return { theme, setTheme, touch, setTouch, logo, setLogo };
 }

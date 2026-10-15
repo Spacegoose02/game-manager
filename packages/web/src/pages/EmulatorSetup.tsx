@@ -3,6 +3,7 @@ import { platformFor, type EmulatorInfo } from "@lootden/shared";
 import { api, formatBytes, type EmulationOverview } from "../api";
 import { useAuth } from "../auth";
 import { bridgeError, desktop, type EmulatorSetup as Setup } from "../desktop";
+import { connectedPads } from "../gamepad";
 
 /**
  * Emulators and BIOS files. In the desktop app: set up each emulator from its official
@@ -50,6 +51,7 @@ export function EmulatorSetup() {
   return (
     <div className="emulator-setup">
       <h1>Emulators and BIOS</h1>
+      <ControllerPanel />
       {!canSetUp && (
         <p className="notice">
           Emulators are set up on each PC from the LootDen desktop app. Open this page in the app to download them and add BIOS files.
@@ -245,6 +247,32 @@ function ServerBios({ data, onChange }: { data: EmulationOverview; onChange: () 
           </tbody>
         </table>
       )}
+    </section>
+  );
+}
+
+/** Which controllers LootDen sees, and how they work in the emulators. */
+function ControllerPanel() {
+  const [pads, setPads] = useState<string[]>(() => connectedPads().map((p) => p.id));
+  useEffect(() => {
+    const t = setInterval(() => setPads(connectedPads().map((p) => p.id)), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <section className="panel controller-panel">
+      <h2>Controller</h2>
+      {pads.length ? (
+        <p>
+          <span className="ok">✓</span> {pads.map((p) => p.replace(/\s*\(.*\)\s*$/, "")).join(", ")}
+        </p>
+      ) : (
+        <p className="muted">No controller seen yet. Plug one in (or turn it on) and press any button.</p>
+      )}
+      <p className="muted small">
+        The first controller is player 1 in every emulator: LootDen sets it up in DuckStation and PCSX2 unless you already bound one there, and RetroArch picks it up
+        by itself. In RetroArch, Select + Start quits back to LootDen and L3 + R3 opens the menu. In the browser player, click the game once so it gets the controller;
+        its own Controls menu remaps buttons. RPCS3 and xemu use their own input settings the first time.
+      </p>
     </section>
   );
 }

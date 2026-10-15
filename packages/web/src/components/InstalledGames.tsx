@@ -177,6 +177,9 @@ export function InstalledGames() {
         <button className="small secondary" onClick={() => run(l.gameId, () => bridge.openFolder(l.gameId))} title={l.installedDir ?? l.dir}>
           Open folder
         </button>
+        <Link className="button small ghost" to={`/games/${l.gameId}?releases=1`} title="Look up the latest releases of this game">
+          Releases
+        </Link>
       </>
     );
   };

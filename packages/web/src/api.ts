@@ -408,6 +408,41 @@ async function upload<T>(method: string, path: string, body: Blob, contentType: 
   return data as T;
 }
 
+/** Download Manager: a game fetched from file-host links. */
+export interface DirectFile {
+  id: number;
+  url: string;
+  host: string;
+  fileName: string | null;
+  sizeBytes: number | null;
+  receivedBytes: number;
+  status: "queued" | "downloading" | "done" | "failed";
+  error: string | null;
+}
+
+export interface DirectPackage {
+  id: number;
+  name: string;
+  platform: string | null;
+  status: "queued" | "downloading" | "paused" | "importing" | "imported" | "failed";
+  error: string | null;
+  importedPath: string | null;
+  addedAt: string;
+  finishedAt: string | null;
+  files: DirectFile[];
+  speed: number | null;
+  progress: ImportProgress | null;
+}
+
+export interface LinkCheck {
+  url: string;
+  host: string;
+  ok: boolean;
+  fileName: string | null;
+  sizeBytes: number | null;
+  error: string | null;
+}
+
 export const api = {
   providers: () => call<AuthProviders>("GET", "/api/auth/providers"),
   setup: (username: string, password: string) => call<User>("POST", "/api/auth/setup", { username, password }),
@@ -461,6 +496,10 @@ export const api = {
   grab: (r: { url: string; title: string; protocol: string; platform?: string | null }) => call<DownloadRecord>("POST", "/api/downloads", r),
   downloads: () => call<{ downloads: DownloadRecord[]; other: LiveDownload[] }>("GET", "/api/downloads"),
   controlDownload: (id: number, action: string, deleteFiles = false) => call("POST", `/api/downloads/${id}`, { action, deleteFiles }),
+  directDownloads: () => call<{ hosts: string[]; packages: DirectPackage[] }>("GET", "/api/direct"),
+  checkLinks: (links: string) => call<LinkCheck[]>("POST", "/api/direct/check", { links }),
+  addLinks: (b: { links: string; name?: string; platform?: string | null }) => call<DirectPackage>("POST", "/api/direct", b),
+  controlDirect: (id: number, action: "pause" | "resume" | "retry" | "remove") => call("POST", `/api/direct/${id}`, { action }),
 
   news: () => call<{ items: NewsItem[]; errors: Array<{ feedId: string; error: string }> }>("GET", "/api/news"),
   integrations: () => call<Integrations>("GET", "/api/settings/integrations"),

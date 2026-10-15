@@ -285,6 +285,33 @@ const MIGRATIONS: string[] = [
   ALTER TABLE games ADD COLUMN kind_override TEXT;
   ALTER TABLE games ADD COLUMN base_game_override TEXT;
   `,
+  `
+  -- Download Manager: games fetched from file-host links (MediaFire, Datanodes...), one row per game.
+  CREATE TABLE direct_packages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    platform TEXT,
+    status TEXT NOT NULL,
+    error TEXT,
+    imported_path TEXT,
+    added_by INTEGER,
+    added_at TEXT NOT NULL,
+    finished_at TEXT
+  );
+  CREATE TABLE direct_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    package_id INTEGER NOT NULL REFERENCES direct_packages(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    url TEXT NOT NULL,
+    host TEXT NOT NULL,
+    file_name TEXT,
+    size_bytes INTEGER,
+    received_bytes INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL,
+    error TEXT
+  );
+  CREATE INDEX direct_files_package ON direct_files(package_id, position);
+  `,
 ];
 
 export function openDatabase(file: string): Db {

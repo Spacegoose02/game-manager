@@ -4,7 +4,7 @@ import { api, type SearchResult } from "../api";
 import { DownloadResults } from "./DownloadResults";
 
 /** Admin: Prowlarr results for one game, with Get buttons, right where the game is shown. */
-export function FindDownloads({ game, onClose }: { game: { name: string }; onClose?: () => void }) {
+export function FindDownloads({ game, onClose, newestFirst }: { game: { name: string }; onClose?: () => void; newestFirst?: boolean }) {
   const [results, setResults] = useState<SearchResult[] | null>(null);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
@@ -12,8 +12,11 @@ export function FindDownloads({ game, onClose }: { game: { name: string }; onClo
   useEffect(() => {
     setResults(null);
     setMsg("");
-    api.searchDownloads(game.name).then(setResults, (e: Error) => setMsg(e.message));
-  }, [game]);
+    api
+      .searchDownloads(game.name)
+      .then((r) => (newestFirst ? [...r].sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? "")) : r))
+      .then(setResults, (e: Error) => setMsg(e.message));
+  }, [game, newestFirst]);
 
   return (
     <section className="panel find-downloads">

@@ -31,7 +31,8 @@ on their own PC with one click, like a small private Steam.
 - **Library server** (Docker, made for Unraid): scans and watches your games folder, finds
   covers, descriptions, genres, age ratings and controller support (IGDB, RAWG, Steam,
   PCGamingWiki, SteamGridDB), and serves a web UI with a home page, filters, a release
-  calendar, news, videos, Discover, and 23 themes.
+  calendar, news, videos, Discover, and 23 themes (the raccoon logo takes each theme's
+  colours, or stays a black, grey and white raccoon).
 - **Desktop app** for Windows and Linux: pick a drive, press Install. It downloads (with
   resume), unpacks zip / 7z / rar, deletes the archives, and tracks play time. Installers
   and disc images get a **Run installer** button, and an admin can upload the installed
@@ -50,9 +51,14 @@ on their own PC with one click, like a small private Steam.
 - **Save sync:** saves are backed up to the server when you close a game and restored on
   another PC.
 - **Emulation:** console games in their own section, with emulators set up by the desktop
-  app and many systems playable in the browser.
+  app and many systems playable in the browser. The first controller is set up as player 1,
+  and the whole UI can be browsed with a gamepad.
 - **Optional download tools** for admins: Prowlarr search, qBittorrent / Transmission /
   Deluge / SABnzbd hand-off, import clean-up, a wanted list, virus scanning and alerts.
+  The **Download Manager** takes pasted links from file hosts (MediaFire, Datanodes,
+  Pixeldrain, Buzzheavier, Google Drive or plain file links), finds the real file behind
+  each page and downloads the game on the server. Every game page has a **Latest releases**
+  lookup (Prowlarr, newest first, and 1337x).
 - **Release sources:** a small plugin layer for feeds that list new games (GOG, itch.io,
   RSS, or your own), shown on Discover and used for wishlist alerts.
 - **Playnite plugin** and a **command-line client** (`lootden`) for scripting.

@@ -54,6 +54,8 @@ setInterval(() => void ctx.versions.run().catch(() => {}), 24 * 3600_000).unref(
 // App downloads: newer releases of the repository an admin fetched from, so desktop apps can update.
 setTimeout(() => void ctx.clients.refresh().catch((err) => app.log.warn({ err: (err as Error).message }, "Checking for a new app release failed")), 5 * 60_000).unref();
 setInterval(() => void ctx.clients.refresh().catch((err) => app.log.warn({ err: (err as Error).message }, "Checking for a new app release failed")), 12 * 3600_000).unref();
+// Download Manager links left mid-way by a restart carry on.
+ctx.direct.resumeAll();
 setInterval(() => ctx.downloads.reconcile().catch((err) => app.log.warn(err, "Download import failed")), 60_000).unref();
 
 const shutdown = async () => {

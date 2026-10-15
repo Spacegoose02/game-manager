@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "./auth";
 import { Layout } from "./components/Layout";
@@ -33,7 +33,10 @@ function RequireAuth({ children }: { children: ReactNode }) {
 export function App() {
   useTheme(); // applies the saved theme on load
   const navigate = useNavigate();
-  useEffect(() => installSpatialNavigation(() => navigate(-1)), [navigate]);
+  // Installed once: navigate changes on every page, and reinstalling stopped the gamepad.
+  const back = useRef(() => navigate(-1));
+  back.current = () => navigate(-1);
+  useEffect(() => installSpatialNavigation(() => back.current()), []);
 
   return (
     <Routes>

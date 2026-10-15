@@ -3,7 +3,9 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { avatarUrl } from "../api";
 import { useAuth } from "../auth";
 import { AlertsBell } from "./AlertsBell";
+import { BrandLogo } from "./BrandLogo";
 import { AppUpdateBanner } from "./AppOptions";
+import { desktop } from "../desktop";
 
 interface NavItem {
   to: string;
@@ -117,7 +119,8 @@ export function Layout() {
     { to: "/emulation", label: "Emulation" },
     ...(kid ? [] : [{ to: "/discover", label: "Discover" }, { to: "/wishlist", label: "Wishlist" }, { to: "/calendar", label: "Calendar" }]),
     { to: "/news", label: "News" },
-    { to: "/apps", label: "Get the app" },
+    // Inside the desktop app the page is still there (Profile links to it for the Playnite extension), just not in the menu.
+    ...(desktop ? [] : [{ to: "/apps", label: "Get the app" }]),
     ...(admin ? [{ to: "/downloads", label: "Downloads" }, { to: "/settings", label: "Settings" }] : []),
   ];
   const signOut = async () => {
@@ -132,7 +135,7 @@ export function Layout() {
             <img src={__BRAND__.wordmark} alt="LootDen" height={36} className="wordmark" />
           ) : (
             <>
-              <img src={__BRAND__.logo ?? "/logo.svg"} alt="" width={36} height={36} />
+              <BrandLogo size={36} />
               <span>LootDen</span>
             </>
           )}

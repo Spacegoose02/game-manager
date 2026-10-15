@@ -691,7 +691,8 @@ main {
   text-align: center;
   align-items: stretch;
 }
-.login-panel img {
+.login-panel img,
+.login-panel .brand-logo {
   align-self: center;
 }
 .login-panel label {
@@ -3031,4 +3032,68 @@ label.field {
   .dl-big {
     font-size: 1.2rem;
   }
+}
+
+/* Download Manager */
+.link-dl textarea {
+  width: 100%;
+  font-family: "JetBrains Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
+  font-size: 13px;
+  resize: vertical;
+}
+.link-dl .inline + .inline,
+.link-dl textarea + .inline {
+  margin-top: 10px;
+}
+.link-dl-name {
+  word-break: break-all;
+}
+.link-dl-files {
+  margin: 6px 0 0;
+  padding-left: 4px;
+  list-style: none;
+}
+.link-dl-files li {
+  word-break: break-all;
+  margin: 2px 0;
+}
+
+/* Latest releases, next to Play and Install */
+.release-lookup {
+  margin-top: 8px;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* The raccoon logo takes the theme's colours, or a real raccoon's (Profile, Logo colours). */
+.brand-logo {
+  display: inline-block;
+  flex: none;
+  line-height: 0;
+  --logo-fur-a: var(--accent-2);
+  --logo-fur-b: var(--accent);
+  --logo-line: var(--bg);
+  --logo-couch-a: color-mix(in srgb, var(--accent) 40%, var(--panel));
+  --logo-couch-b: color-mix(in srgb, var(--accent) 22%, var(--bg));
+  --logo-pad: var(--text);
+  --logo-button-a: var(--accent);
+  --logo-button-b: var(--accent-2);
+}
+html[data-scheme="light"] .brand-logo {
+  --logo-line: var(--text);
+  --logo-pad: #ffffff;
+}
+html[data-logo="raccoon"] .brand-logo {
+  --logo-fur-a: #e4e6e9;
+  --logo-fur-b: #7d838b;
+  --logo-line: #141517;
+  --logo-couch-a: #4a4e55;
+  --logo-couch-b: #26282c;
+  --logo-pad: #ffffff;
+  --logo-button-a: #9aa0a6;
+  --logo-button-b: #d7dade;
+}
+.logo-style {
+  margin: 14px 0 6px;
+  gap: 12px;
 }

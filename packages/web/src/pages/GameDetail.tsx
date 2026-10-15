@@ -7,6 +7,7 @@ import { Badges } from "../components/Badges";
 import { Cover } from "../components/Cover";
 import { ArtworkEditor } from "../components/ArtworkEditor";
 import { DesktopInstall } from "../components/DesktopInstall";
+import { ReleaseLookup } from "../components/ReleaseLookup";
 import { SavesPanel } from "../components/SavesPanel";
 import { UpdatesPanel } from "../components/UpdatesPanel";
 import { PreparePanel } from "../components/PreparePanel";
@@ -107,6 +108,7 @@ export function GameDetail() {
             </p>
           </div>
           )}
+          {!isAddon && <ReleaseLookup title={game.title} autoOpen={params.get("releases") === "1"} />}
         </div>
       </div>
 
