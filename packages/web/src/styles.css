@@ -3097,3 +3097,28 @@ html[data-logo="raccoon"] .brand-logo {
   margin: 14px 0 6px;
   gap: 12px;
 }
+
+/* ---------- Desktop app window frame ----------------------------------------
+   The desktop app hides the system title bar (preload.ts sets data-lootden-frame). The top
+   bar moves the window and double-clicks maximize; the system draws minimize, maximize and
+   close over its right end, so the bar keeps that corner clear. */
+html[data-lootden-frame="hidden"] .topbar {
+  -webkit-app-region: drag;
+  background: var(--bg);
+  backdrop-filter: none;
+  padding-right: calc(100vw - env(titlebar-area-width, calc(100vw - 138px)) + 0.75rem);
+}
+html[data-lootden-frame] .topbar :is(a, button, input, select, [role="menu"], .alerts-menu) {
+  -webkit-app-region: no-drag;
+}
+/* Pages without the top bar (sign-in) still get a strip to move the window by. */
+html[data-lootden-frame="hidden"] .login::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: var(--lootden-titlebar, 40px);
+  -webkit-app-region: drag;
+}
+html[data-lootden-frame] .lightbox {
+  -webkit-app-region: no-drag;
+}

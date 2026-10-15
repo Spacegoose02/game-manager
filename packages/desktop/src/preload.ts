@@ -35,6 +35,7 @@ const bridge = {
   appSettings: (patch?: object) => ipcRenderer.invoke("gm:appSettings", patch),
   appUpdate: (action?: "status" | "check" | "install") => ipcRenderer.invoke("gm:appUpdate", action),
   quit: () => ipcRenderer.invoke("gm:quit"),
+  titleBarColors: (color: string, symbolColor: string) => ipcRenderer.invoke("gm:titleBarColors", color, symbolColor),
   onProgress: (cb: (p: unknown) => void) => {
     const listener = (_e: unknown, p: unknown) => cb(p);
     ipcRenderer.on("gm:progress", listener);
@@ -43,6 +44,29 @@ const bridge = {
 };
 contextBridge.exposeInMainWorld("lootden", bridge);
 contextBridge.exposeInMainWorld("gameManager", bridge);
+
+// No system title bar: <html data-lootden-frame> tells the page to make its top bar the drag
+// area and leave room for the window buttons ("fullscreen" while those are hidden).
+interface Frame {
+  custom: boolean;
+  fullscreen: boolean;
+  height: number;
+}
+let frame: Frame | null = null;
+const markFrame = () => {
+  const root = document.documentElement;
+  if (!root || !frame) return;
+  if (!frame.custom) delete root.dataset.lootdenFrame;
+  else root.dataset.lootdenFrame = frame.fullscreen ? "fullscreen" : "hidden";
+  root.style.setProperty("--lootden-titlebar", `${frame.height}px`);
+};
+const setFrame = (f: Frame) => {
+  frame = f;
+  markFrame();
+};
+void ipcRenderer.invoke("gm:frame").then(setFrame);
+ipcRenderer.on("gm:frame", (_e, f: Frame) => setFrame(f));
+document.addEventListener("DOMContentLoaded", markFrame);
 
 // The local setup page only needs to save the server address.
 contextBridge.exposeInMainWorld("lootdenSetup", {

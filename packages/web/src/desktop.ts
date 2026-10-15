@@ -118,6 +118,8 @@ export interface DesktopBridge {
   appUpdate?(action?: "status" | "check" | "install"): Promise<AppUpdate>;
   /** Quits the app for real (closing the window only hides it to the tray). */
   quit?(): Promise<void>;
+  /** Colours of the window buttons drawn over the top bar (apps from 0.11.2; older ones keep the system title bar). */
+  titleBarColors?(color: string, symbolColor: string): Promise<void>;
   onProgress(cb: (p: Progress) => void): () => void;
 }
 

@@ -885,7 +885,17 @@ function registerIpc(): void {
   ipcMain.handle("gm:changeServer", async (e) => {
     fromServer(e);
     settings.update({ serverUrl: "", apiToken: "" });
+    if (customFrame) win?.setTitleBarOverlay({ color: "#0d0820", symbolColor: "#f3eeff", height: TITLEBAR_HEIGHT });
     await win?.loadFile(path.join(__dirname, "..", "setup", "index.html"));
+  });
+
+  // The page draws the title bar; it asks how, and passes its theme's colours for the buttons.
+  ipcMain.handle("gm:frame", () => frameState());
+  ipcMain.handle("gm:titleBarColors", (e, color: string, symbolColor: string) => {
+    fromServer(e);
+    if (!customFrame || !win) return;
+    const css = /^#[0-9a-f]{3,8}$/i;
+    if (css.test(color) && css.test(symbolColor)) win.setTitleBarOverlay({ color, symbolColor, height: TITLEBAR_HEIGHT });
   });
 
   ipcMain.handle("gm:toggleFullscreen", (e) => {
@@ -907,6 +917,14 @@ async function openDeepLink(link: string): Promise<void> {
   await win.loadURL(`${origin()}/games/${m[1]}?install=1`);
 }
 
+// Windows and Linux: no system title bar. The page's top bar is the drag area, and the
+// system draws minimize, maximize and close over its right end in the theme's colours, so
+// snapping and double-click to maximize keep working. macOS keeps its own title bar.
+const customFrame = process.platform !== "darwin";
+const TITLEBAR_HEIGHT = 40;
+const frameState = () => ({ custom: customFrame, fullscreen: !!win?.isFullScreen(), height: TITLEBAR_HEIGHT });
+const sendFrame = () => win?.webContents.send("gm:frame", frameState());
+
 async function createWindow(): Promise<void> {
   const s = settings.get();
   win = new BrowserWindow({
@@ -919,6 +937,7 @@ async function createWindow(): Promise<void> {
     show: !(startHidden && tray),
     autoHideMenuBar: true,
     title: "LootDen",
+    ...(customFrame ? { titleBarStyle: "hidden" as const, titleBarOverlay: { color: "#0d0820", symbolColor: "#f3eeff", height: TITLEBAR_HEIGHT } } : {}),
     icon: path.join(__dirname, "..", "build", "icon.png"),
     webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false },
   });
@@ -947,6 +966,8 @@ async function createWindow(): Promise<void> {
     if (update.state === "ready" && !busy() && settings.get().autoUpdate) void installNow();
   });
   win.on("closed", () => (win = null));
+  win.on("enter-full-screen", sendFrame);
+  win.on("leave-full-screen", sendFrame);
   win.webContents.on("before-input-event", (_e, input) => {
     if (input.type === "keyDown" && input.key === "F11") win?.setFullScreen(!win.isFullScreen());
   });

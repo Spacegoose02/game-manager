@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { updateFavicon, type LogoStyle } from "./components/BrandLogo";
+import { desktop } from "./desktop";
 
 /**
  * Themes are sets of CSS variables (see the token list in styles.css). Each one only
@@ -103,6 +104,8 @@ function apply(id: string) {
   root.style.colorScheme = t.scheme;
   root.dataset.theme = t.id;
   root.dataset.scheme = t.scheme;
+  // The desktop app's minimize, maximize and close buttons sit on the top bar, in its colours.
+  void desktop?.titleBarColors?.(t.bg, t.text).catch(() => {});
 }
 
 function read(key: string, fallback: string): string {

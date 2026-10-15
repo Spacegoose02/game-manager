@@ -12,6 +12,8 @@
       .muted { color: #b3a6d9; margin: 0; }
       .error { color: #ff5c7a; min-height: 1.5em; margin: 0; }
       img { align-self: center; }
+      /* No system title bar: the top strip moves the window, the buttons sit at its right. */
+      html[data-lootden-frame="hidden"] body::before { content: ""; position: fixed; inset: 0 0 auto 0; height: var(--lootden-titlebar, 40px); -webkit-app-region: drag; }
     </style>
   </head>
   <body>
