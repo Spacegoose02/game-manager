@@ -132,8 +132,9 @@ function AllGames() {
         </select>
         <select value={controller} onChange={(e) => set("controller", e.target.value)} aria-label="Controller support">
           <option value="">Any input</option>
+          <option value="any">Full or partial controller support</option>
           <option value="full">Full controller support</option>
-          <option value="partial">Some controller support</option>
+          <option value="partial">Partial controller support</option>
         </select>
         <select value={sort} onChange={(e) => set("sort", e.target.value)} aria-label="Sort">
           {SORTS.map(([v, label]) => (

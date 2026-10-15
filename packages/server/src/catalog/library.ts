@@ -358,7 +358,7 @@ export class Library {
       if (query.kidSafe && summary.kidSafe !== true) continue;
       if (query.missingMetadata && meta.has(g.id)) continue;
       if (query.controller === "full" && summary.controllerSupport !== "full") continue;
-      if (query.controller === "partial" && summary.controllerSupport !== "partial" && summary.controllerSupport !== "full") continue;
+      if (query.controller === "partial" && summary.controllerSupport !== "partial") continue;
       if (query.controller === "any" && summary.controllerSupport !== "partial" && summary.controllerSupport !== "full") continue;
       out.push(summary);
     }

@@ -89,6 +89,12 @@ describe("catalog API", () => {
     assert.equal(patched.json<GameDetail>().title, "GTA V");
     const pads = (await app.inject({ url: "/api/games?controller=full", headers: auth })).json<GameSummary[]>();
     assert.deepEqual(pads.map((g) => g.title), ["GTA V"]);
+    const [sims] = ctx.library.list({ search: "sims" });
+    await app.inject({ method: "PATCH", url: `/api/games/${sims!.id}`, headers: auth, payload: { controllerSupport: "partial" } });
+    const titles = async (controller: string) =>
+      (await app.inject({ url: `/api/games?controller=${controller}`, headers: auth })).json<GameSummary[]>().map((g) => g.title).sort();
+    assert.deepEqual(await titles("partial"), ["The Sims 4"]);
+    assert.deepEqual(await titles("any"), ["GTA V", "The Sims 4"]);
     const bySize = (await app.inject({ url: "/api/games?sort=size&order=desc", headers: auth })).json<GameSummary[]>();
     assert.equal(bySize[0]!.title, "The Sims 4");
     await app.close();
