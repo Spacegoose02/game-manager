@@ -52,11 +52,25 @@ export function tidyName(releaseName: string): string {
   return safeFolderName(label);
 }
 
+/**
+ * Whether a 7-Zip build can unpack RAR. Some packaged builds (Debian's and Alpine's "7zip")
+ * leave the RAR decoder out for licence reasons; "7z i" then lists no Rar codecs.
+ */
+function canUnrar(bin: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const child = spawn(bin, ["i"], { stdio: ["ignore", "pipe", "ignore"] });
+    let out = "";
+    child.stdout.on("data", (d) => (out += d.toString()));
+    child.on("error", () => resolve(false));
+    child.on("close", () => resolve(/\bRar5?\b/.test(out.split(/^Codecs:/m)[1] ?? "")));
+  });
+}
+
 export async function findServerSevenZip(): Promise<{ path: string; rar: boolean } | null> {
   const exe = async (p: string) => access(p, constants.X_OK).then(() => true, () => false);
-  if (process.env.GM_7Z_PATH && (await exe(process.env.GM_7Z_PATH))) return { path: process.env.GM_7Z_PATH, rar: true };
+  if (process.env.GM_7Z_PATH && (await exe(process.env.GM_7Z_PATH))) return { path: process.env.GM_7Z_PATH, rar: await canUnrar(process.env.GM_7Z_PATH) };
   for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
-    for (const name of ["7zz", "7z"]) if (dir && (await exe(path.join(dir, name)))) return { path: path.join(dir, name), rar: true };
+    for (const name of ["7zz", "7z"]) if (dir && (await exe(path.join(dir, name)))) return { path: path.join(dir, name), rar: await canUnrar(path.join(dir, name)) };
   }
   try {
     const p = (createRequire(import.meta.url)("7zip-bin") as { path7za: string }).path7za;
@@ -169,10 +183,14 @@ export async function tidyDownload(
   if ((await readdir(root)).length === 0) throw new Error("Nothing left after cleaning up the download");
 
   const name = tidyName(releaseName);
+  // An archive the server couldn't unpack stays loose, so the PC unpacks it on install;
+  // zipped up, it would come out of the zip still packed and be copied over the game as a file.
+  const packed = groupArchiveSets((await walk(root)).filter((f) => !f.dir).map((f) => f.path));
+  if (packed.length && opts.repack === "zip") report.warnings.push(`Kept as a folder: ${packed.map((s) => path.basename(s.first)).join(", ")} couldn't be unpacked on the server, so the PC unpacks it`);
   // Disc images and installers get set up once on a PC (see "Prepare" in the app), so keep them loose.
   const needsSetup = setupKindOf((await walk(root)).filter((f) => !f.dir).map((f) => ({ path: path.relative(root, f.path) }))) !== null;
   if (needsSetup && opts.repack === "zip") report.warnings.push("Kept as a folder: it's a disc image or installer to set up with the app first");
-  if (opts.repack === "zip" && sevenZip && !needsSetup) {
+  if (opts.repack === "zip" && sevenZip && !needsSetup && !packed.length) {
     const target = path.join(gamesDir, `${name}.zip`);
     if (await stat(target).catch(() => null)) throw new Error(`${path.basename(target)} already exists in the games folder`);
     const temp = path.join(gamesDir, `.${name}.zip.importing`);

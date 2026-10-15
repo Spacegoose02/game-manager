@@ -1,7 +1,8 @@
 import { copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { compareVersion, setupKindOf, type GameDetail } from "@lootden/shared";
+import { archiveKindOf, compareVersion, groupArchiveSets, setupKindOf, type GameDetail } from "@lootden/shared";
 import type { GameServerClient } from "./api.js";
+import { extractArchive, findSevenZip } from "./extractor.js";
 import { saveManifest, type InstalledGame } from "./installed.js";
 import { installGame, isManifest, type InstallEvent } from "./installer.js";
 import { findSetup, installerArgs } from "./prepare.js";
@@ -60,10 +61,47 @@ async function overlayRoot(staged: string, target: string): Promise<string> {
   for (let i = 0; i < 3; i++) {
     const entries = (await readdir(root, { withFileTypes: true })).filter((e) => !isManifest(e.name));
     if (entries.length !== 1 || !entries[0]!.isDirectory()) break;
-    if (await exists(path.join(target, entries[0]!.name))) break;
-    root = path.join(root, entries[0]!.name);
+    const inner = path.join(root, entries[0]!.name);
+    // A folder of the same name in the game is only a real match if it shares files with the
+    // wrapper; one left by a hand-extracted copy of the patch shouldn't swallow the update.
+    if ((await exists(path.join(target, entries[0]!.name))) && (await sharesMore(inner, path.join(target, entries[0]!.name), target))) break;
+    root = inner;
   }
   return root;
+}
+
+/**
+ * Unpacks an update that is still nothing but archives once downloaded, such as a .rar the
+ * server zipped up without unpacking. Copied over the game as it was, the game would get the
+ * .rar instead of the files inside it. Archives sitting among other files are left alone,
+ * since they can be the game's own data.
+ */
+async function unpackLeftovers(staged: string, sevenZipPath: string, signal?: AbortSignal): Promise<void> {
+  for (let round = 0; round < 3; round++) {
+    const files = await listFiles(staged);
+    if (!files.length || !files.every((f) => archiveKindOf(f))) return;
+    const sets = groupArchiveSets(files);
+    if (!sets.length) return;
+    const sevenZip = await findSevenZip(sevenZipPath);
+    if (!sevenZip) throw new Error("This update is packed but 7-Zip was not found. Install 7-Zip or set sevenZipPath.");
+    for (const set of sets) {
+      signal?.throwIfAborted();
+      const first = path.join(staged, ...set.first.split("/"));
+      await extractArchive(sevenZip, set.kind, first, path.dirname(first));
+      for (const v of set.volumes) await rm(path.join(staged, ...v.split("/")), { force: true });
+    }
+  }
+}
+
+/** Whether more of `dir`'s top-level names exist in `match` than in `other`. */
+async function sharesMore(dir: string, match: string, other: string): Promise<boolean> {
+  let a = 0;
+  let b = 0;
+  for (const name of await readdir(dir)) {
+    if (await exists(path.join(match, name))) a++;
+    if (await exists(path.join(other, name))) b++;
+  }
+  return a >= b;
 }
 
 /** Why an update shouldn't go on this copy, or null when it fits. */
@@ -99,6 +137,7 @@ export async function applyUpdate(api: GameServerClient, updateId: string, insta
   await mkdir(work, { recursive: true });
   try {
     const staged = await installGame(api, update.id, { installDir: work, keepArchives: false, sevenZipPath: opts.sevenZipPath, signal: opts.signal, onEvent: opts.onEvent, report: false });
+    await unpackLeftovers(staged, opts.sevenZipPath, opts.signal);
     const files = await listFiles(staged);
     if (!files.length) throw new Error(`${update.title} has no files`);
 

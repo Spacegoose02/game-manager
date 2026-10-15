@@ -94,4 +94,48 @@ describe("applying updates to an installed game", () => {
       await built.app.close();
     }
   });
+  it("unpacks an update that is still an archive inside its zip, instead of copying the archive over the game", async () => {
+    const root = path.join(work, "packed");
+    const games = path.join(root, "games");
+    await mkdir(path.join(games, "Celeste v1.0", "Data"), { recursive: true });
+    await writeFile(path.join(games, "Celeste v1.0", "Celeste.exe"), "old exe");
+    await writeFile(path.join(games, "Celeste v1.0", "Data", "level.bin"), "old level");
+    await writeFile(path.join(games, "Celeste v1.0", "Data", "big.pak"), "x".repeat(10_000));
+    // What the server made of a .rar it couldn't unpack: a zip holding just the archive, whose
+    // files sit in a folder named after the patch.
+    const patch = path.join(root, "src", "Update Celeste 1.0 to 1.1");
+    await mkdir(path.join(patch, "Data"), { recursive: true });
+    await writeFile(path.join(patch, "Celeste.exe"), "new exe");
+    await writeFile(path.join(patch, "Data", "level.bin"), "new level");
+    await writeFile(path.join(patch, "Data", "extra.bin"), "extra");
+    const sevenZip = (await findSevenZip(""))!.path;
+    const inner = path.join(root, "src", "Update Celeste 1.0 to 1.1.7z");
+    execFileSync(sevenZip, ["a", "-t7z", inner, patch], { stdio: "ignore" });
+    execFileSync(sevenZip, ["a", "-tzip", path.join(games, "Celeste Update v1.1.zip"), inner], { stdio: "ignore" });
+
+    const built = buildApp({ ...loadConfig({}), gamesDir: games, dataDir: path.join(root, "data"), apiToken: "t0ken", logLevel: "silent" }, openDatabase(":memory:"));
+    await built.ctx.library.rescan();
+    const address = await built.app.listen({ host: "127.0.0.1", port: 0 });
+    try {
+      const api = new GameServerClient({ serverUrl: address, apiToken: "t0ken" });
+      const [celeste] = await api.listGames();
+      const [update] = await api.json<Array<{ id: string }>>("/api/games?kind=update");
+      const pc = path.join(root, "pc");
+      const dir = await installGame(api, celeste!.id, { installDir: pc, keepArchives: false, sevenZipPath: "", report: false });
+      const [installed] = await listInstalled([pc]);
+      // A copy of the patch extracted into the game by hand doesn't pull the update into it.
+      await mkdir(path.join(dir, "Update Celeste 1.0 to 1.1"));
+      await writeFile(path.join(dir, "Update Celeste 1.0 to 1.1", "Celeste.exe"), "stray");
+
+      const applied = await applyUpdate(api, update!.id, installed!, { workDir: path.join(root, "tmp"), sevenZipPath: "" });
+      assert.deepEqual([applied.mode, applied.replaced, applied.added], ["files", 2, 1]);
+      assert.equal(await read(path.join(dir, "Celeste.exe")), "new exe", "files land where they belong, not in the patch's folder");
+      assert.equal(await read(path.join(dir, "Data", "level.bin")), "new level");
+      assert.equal(await read(path.join(dir, "Data", "extra.bin")), "extra");
+      assert.ok(await gone(path.join(dir, "Update Celeste 1.0 to 1.1.7z")), "the archive itself is never copied into the game");
+      assert.equal(await read(path.join(dir, "Update Celeste 1.0 to 1.1", "Celeste.exe")), "stray");
+    } finally {
+      await built.app.close();
+    }
+  });
 });

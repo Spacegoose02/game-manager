@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -310,5 +310,24 @@ describe("download tidy rules", () => {
     assert.equal(tidyName("Hades_Build_123456.zip"), "Hades Build 123456");
     assert.equal(tidyName("Celeste [FitGirl Repack]"), "Celeste");
     assert.equal(releaseVersion("Game v1_2_3"), "1.2.3");
+  });
+
+  it("keeps a download as a folder when an archive in it couldn't be unpacked, rather than zipping the archive up", async () => {
+    const { tidyDownload } = await import("../src/connectors/tidy.js");
+    const tmp = await mkdtemp(path.join(os.tmpdir(), "lootden-tidy-"));
+    try {
+      const staging = path.join(tmp, ".import-1");
+      const games = path.join(tmp, "games");
+      await mkdir(staging, { recursive: true });
+      await mkdir(games);
+      await writeFile(path.join(staging, "Update.Game.v1.0.to.v1.1.rar"), "rar bytes");
+      const sevenZip = await findServerSevenZip();
+      // A 7-Zip without the RAR decoder, as some Linux packages ship it.
+      const report = await tidyDownload(staging, "Update.Game.v1.0.to.v1.1.rar", games, { stripJunk: true, extract: true, repack: "zip" }, sevenZip && { ...sevenZip, rar: false });
+      assert.ok(!report.target.endsWith(".zip"), report.target);
+      assert.equal(await readFile(path.join(report.target, "Update.Game.v1.0.to.v1.1.rar"), "utf8"), "rar bytes");
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
   });
 });
