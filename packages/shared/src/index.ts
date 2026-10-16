@@ -169,7 +169,8 @@ export interface ApiTokenInfo {
 
 export interface AuthProviders {
   local: boolean;
-  oidc: { enabled: boolean; name: string };
+  /** appHandoff: the desktop app can sign in through the system browser. */
+  oidc: { enabled: boolean; name: string; appHandoff?: boolean };
   /** Reverse-proxy login such as TinyAuth forward auth. */
   header: boolean;
   /** True until the first admin account exists. */

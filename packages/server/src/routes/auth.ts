@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { AuthProviders } from "@lootden/shared";
 import { verifyPassword } from "../auth/crypto.js";
+import { isAppNonce } from "../auth/oidc.js";
 import { SESSION_COOKIE } from "../auth/service.js";
 import { HttpProblem, type AppContext } from "../context.js";
 import { publicUser, type UserRecord } from "../users/repo.js";
@@ -19,7 +20,7 @@ export function authRoutes(app: FastifyInstance, ctx: AppContext) {
 
   app.get("/api/auth/providers", async (): Promise<AuthProviders> => ({
     local: true,
-    oidc: { enabled: ctx.oidc.enabled, name: ctx.config.oidc.name },
+    oidc: { enabled: ctx.oidc.enabled, name: ctx.config.oidc.name, appHandoff: true },
     header: !!ctx.config.headerAuth.userHeader,
     setupRequired: ctx.users.count() === 0,
   }));
@@ -68,15 +69,18 @@ export function authRoutes(app: FastifyInstance, ctx: AppContext) {
     return { ok: true };
   });
 
-  app.get<{ Querystring: { returnTo?: string } }>("/api/auth/oidc/login", async (req, reply) => {
+  /** ?app=<nonce> comes from the desktop app, which opens this in the system browser. */
+  app.get<{ Querystring: { returnTo?: string; app?: string } }>("/api/auth/oidc/login", async (req, reply) => {
     if (!ctx.oidc.enabled) throw new HttpProblem(404, "Single sign-on is not configured");
-    return reply.redirect(await ctx.oidc.start(req.query.returnTo));
+    const appNonce = isAppNonce(req.query.app) ? req.query.app : undefined;
+    return reply.redirect(await ctx.oidc.start(req.query.returnTo, appNonce));
   });
 
   app.get("/api/auth/oidc/callback", async (req, reply) => {
     if (!ctx.oidc.enabled) throw new HttpProblem(404, "Single sign-on is not configured");
     try {
-      const { user, returnTo } = await ctx.oidc.finish(new URL(req.url, ctx.config.publicUrl));
+      const { user, returnTo, appNonce } = await ctx.oidc.finish(new URL(req.url, ctx.config.publicUrl));
+      if (appNonce) return reply.type("text/html").send(handoffPage(`lootden://auth?code=${ctx.oidc.issueHandoff(user.id, appNonce, returnTo)}`));
       startSession(req, reply, user);
       return reply.redirect(returnTo);
     } catch (err) {
@@ -84,4 +88,22 @@ export function authRoutes(app: FastifyInstance, ctx: AppContext) {
       return reply.redirect(`/login?error=${encodeURIComponent((err as Error).message)}`);
     }
   });
+
+  /** The desktop app loads this with the code from the browser, and gets its session here. */
+  app.get<{ Querystring: { code?: string; app?: string } }>("/api/auth/oidc/app", async (req, reply) => {
+    const done = isAppNonce(req.query.app) ? ctx.oidc.redeemHandoff(String(req.query.code ?? ""), req.query.app) : null;
+    const user = done && ctx.users.byId(done.userId);
+    if (!done || !user) return reply.redirect(`/login?error=${encodeURIComponent("Sign-in expired or was started elsewhere; try again")}`);
+    startSession(req, reply, user);
+    return reply.redirect(done.returnTo);
+  });
+}
+
+/** Shown in the system browser after a desktop sign-in: hands the code to the app. */
+function handoffPage(link: string): string {
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>Signed in to LootDen</title>
+<style>body{font-family:system-ui,sans-serif;background:#0d0820;color:#f3eeff;display:grid;place-items:center;min-height:100vh;margin:0;text-align:center}a{color:#c9a7ff}</style></head>
+<body><main><h1>Signed in</h1><p>You can close this tab and go back to LootDen.</p><p><a href="${link}">Open LootDen</a></p></main>
+<script>location.href=${JSON.stringify(link)}</script></body></html>`;
 }

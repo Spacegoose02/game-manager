@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import * as client from "openid-client";
 import type { ServerConfig } from "../config.js";
 import type { UserRecord, UserRepo } from "../users/repo.js";
@@ -5,8 +6,20 @@ import type { UserRecord, UserRepo } from "../users/repo.js";
 interface Pending {
   verifier: string;
   returnTo: string;
+  /** Set when the desktop app started the login in the system browser. */
+  appNonce?: string;
   expires: number;
 }
+
+interface Handoff {
+  userId: number;
+  appNonce: string;
+  returnTo: string;
+  expires: number;
+}
+
+/** What the desktop app sends to prove a handoff code is for the login it started. */
+export const isAppNonce = (s: unknown): s is string => typeof s === "string" && /^[\w-]{22,128}$/.test(s);
 
 /**
  * Authorization-code login with PKCE against any OpenID Connect provider
@@ -15,6 +28,7 @@ interface Pending {
 export class OidcService {
   private configPromise: Promise<client.Configuration> | null = null;
   private pending = new Map<string, Pending>();
+  private handoffs = new Map<string, Handoff>();
 
   constructor(
     private readonly config: ServerConfig,
@@ -25,6 +39,7 @@ export class OidcService {
   reset(): void {
     this.configPromise = null;
     this.pending.clear();
+    this.handoffs.clear();
   }
 
   /** Fetches the provider's discovery document, for the Test button. */
@@ -56,13 +71,13 @@ export class OidcService {
     return this.configPromise;
   }
 
-  async start(returnTo = "/"): Promise<string> {
+  async start(returnTo = "/", appNonce?: string): Promise<string> {
     const cfg = await this.discover();
     const verifier = client.randomPKCECodeVerifier();
     const state = client.randomState();
     const now = Date.now();
     for (const [k, v] of this.pending) if (v.expires < now) this.pending.delete(k);
-    this.pending.set(state, { verifier, returnTo: returnTo.startsWith("/") ? returnTo : "/", expires: now + 10 * 60_000 });
+    this.pending.set(state, { verifier, returnTo: safeReturn(returnTo), appNonce, expires: now + 10 * 60_000 });
     return client
       .buildAuthorizationUrl(cfg, {
         redirect_uri: this.redirectUri,
@@ -75,7 +90,7 @@ export class OidcService {
   }
 
   /** Finishes the login and returns the local account (created on first login when allowed). */
-  async finish(callbackUrl: URL): Promise<{ user: UserRecord; returnTo: string }> {
+  async finish(callbackUrl: URL): Promise<{ user: UserRecord; returnTo: string; appNonce?: string }> {
     const cfg = await this.discover();
     const state = callbackUrl.searchParams.get("state") ?? "";
     const pending = this.pending.get(state);
@@ -90,7 +105,27 @@ export class OidcService {
         // Some providers have no userinfo endpoint; the ID token claims are enough.
       }
     }
-    return { user: await this.provision(claims), returnTo: pending.returnTo };
+    return { user: await this.provision(claims), returnTo: pending.returnTo, appNonce: pending.appNonce };
+  }
+
+  /**
+   * The desktop app signs in through the system browser, since Google and others refuse
+   * embedded browsers. The browser gets a one-time code to pass back to the app.
+   */
+  issueHandoff(userId: number, appNonce: string, returnTo: string): string {
+    const now = Date.now();
+    for (const [k, v] of this.handoffs) if (v.expires < now) this.handoffs.delete(k);
+    const code = randomBytes(32).toString("base64url");
+    this.handoffs.set(code, { userId, appNonce, returnTo, expires: now + 2 * 60_000 });
+    return code;
+  }
+
+  /** Redeems a handoff code once; only the app that started the login knows its nonce. */
+  redeemHandoff(code: string, appNonce: string): { userId: number; returnTo: string } | null {
+    const h = this.handoffs.get(code);
+    this.handoffs.delete(code);
+    if (!h || h.expires < Date.now() || h.appNonce !== appNonce) return null;
+    return { userId: h.userId, returnTo: h.returnTo };
   }
 
   private async provision(claims: Record<string, unknown>): Promise<UserRecord> {
@@ -121,4 +156,9 @@ export class OidcService {
     }
     return user;
   }
+}
+
+/** Only paths on this server; "//host" would leave it. */
+function safeReturn(returnTo: string): string {
+  return returnTo.startsWith("/") && !returnTo.startsWith("//") ? returnTo : "/";
 }
