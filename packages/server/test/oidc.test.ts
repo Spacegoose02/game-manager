@@ -79,7 +79,7 @@ describe("OIDC single sign-on", () => {
       oidc: { issuer: idp.issuer, clientId: "gm", clientSecret: "s3cret", name: "TinyAuth", scopes: "openid profile email groups", autoCreate: true, adminGroup: "gm-admins" },
     });
     const providers = (await app.inject("/api/auth/providers")).json();
-    assert.deepEqual(providers.oidc, { enabled: true, name: "TinyAuth" });
+    assert.deepEqual(providers.oidc, { enabled: true, name: "TinyAuth", appHandoff: true });
 
     const start = await app.inject("/api/auth/oidc/login?returnTo=/library");
     assert.equal(start.statusCode, 302);
@@ -101,6 +101,41 @@ describe("OIDC single sign-on", () => {
     // Replaying the same callback fails cleanly.
     const replay = await app.inject(callback.pathname + callback.search);
     assert.match(String(replay.headers.location), /^\/login\?error=/);
+    await app.close();
+    await idp.close();
+  });
+
+  it("hands a sign-in from the system browser back to the desktop app that started it", async () => {
+    const idp = await fakeIdp({ sub: "user-7", preferred_username: "deck", email: "deck@example.com" });
+    const { app } = await makeApp(root, {
+      publicUrl: "https://games.example.com",
+      oidc: { issuer: idp.issuer, clientId: "gm", clientSecret: "s3cret", name: "TinyAuth", scopes: "openid email", autoCreate: true, adminGroup: "" },
+    });
+    const nonce = "n".repeat(43);
+    const start = await app.inject(`/api/auth/oidc/login?returnTo=/library&app=${nonce}`);
+    const cb = new URL(idp.approve(start.headers.location as string));
+    const done = await app.inject(cb.pathname + cb.search);
+    // The browser gets no session, only a page that opens the app with a one-time code.
+    assert.equal(done.statusCode, 200);
+    assert.equal(done.cookies.find((c) => c.name === "gm_session"), undefined);
+    const code = done.body.match(/lootden:\/\/auth\?code=([\w-]+)/)?.[1];
+    assert.ok(code);
+
+    // Another app (or a planted link) without the nonce can't use the code, and burns it.
+    const wrong = await app.inject(`/api/auth/oidc/app?code=${code}&app=${"x".repeat(43)}`);
+    assert.match(String(wrong.headers.location), /^\/login\?error=/);
+    const late = await app.inject(`/api/auth/oidc/app?code=${code}&app=${nonce}`);
+    assert.match(String(late.headers.location), /^\/login\?error=/);
+
+    // The app that started it gets the session.
+    const again = await app.inject(`/api/auth/oidc/login?app=${nonce}`);
+    const cb2 = new URL(idp.approve(again.headers.location as string));
+    const code2 = (await app.inject(cb2.pathname + cb2.search)).body.match(/code=([\w-]+)/)![1];
+    const redeemed = await app.inject(`/api/auth/oidc/app?code=${code2}&app=${nonce}`);
+    assert.equal(redeemed.statusCode, 302);
+    assert.equal(redeemed.headers.location, "/");
+    const me = (await app.inject({ url: "/api/me", headers: { cookie: sessionCookie(redeemed) } })).json();
+    assert.equal(me.user.username, "deck");
     await app.close();
     await idp.close();
   });

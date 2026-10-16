@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readdir, rm } from "node:fs/promises";
 import os from "node:os";
@@ -945,14 +946,46 @@ function registerIpc(): void {
   });
 }
 
-/** lootden://install/<id> from a browser opens the game page with the install panel. */
+/**
+ * lootden://install/<id> from a browser opens the game page with the install panel.
+ * lootden://auth?code=... finishes a single sign-on the app started in the browser.
+ */
 async function openDeepLink(link: string): Promise<void> {
-  const m = link.match(/^(?:lootden|gamemanager):\/\/install\/([\w-]+)/);
-  if (!m || !win || !origin()) return;
+  const install = link.match(/^(?:lootden|gamemanager):\/\/install\/([\w-]+)/);
+  const auth = link.match(/^(?:lootden|gamemanager):\/\/auth\/?\?code=([\w-]+)/);
+  if (!(install || auth) || !win || !origin()) return;
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
-  await win.loadURL(`${origin()}/games/${m[1]}?install=1`);
+  if (install) await win.loadURL(`${origin()}/games/${install[1]}?install=1`);
+  else if (auth && signInNonce) {
+    const nonce = signInNonce;
+    signInNonce = null;
+    await win.loadURL(`${origin()}/api/auth/oidc/app?code=${auth[1]}&app=${nonce}`);
+  }
+}
+
+/** Proves to the server that a sign-in handed back from the browser is the one this app started. */
+let signInNonce: string | null = null;
+
+/**
+ * Google and other providers refuse to sign in inside an app window, so single sign-on runs
+ * in the system browser and comes back through lootden://auth. Servers from before 0.12.2
+ * can't hand back, so the sign-in stays in the window for them.
+ */
+async function startSignIn(url: string): Promise<void> {
+  let handoff = false;
+  try {
+    const res = await net.fetch(`${origin()}/api/auth/providers`);
+    handoff = !!((await res.json()) as { oidc?: { appHandoff?: boolean } }).oidc?.appHandoff;
+  } catch {
+    // Unreachable or old server: fall back to the window.
+  }
+  if (!handoff) return void win?.loadURL(url);
+  signInNonce = randomBytes(32).toString("base64url");
+  const target = new URL(url);
+  target.searchParams.set("app", signInNonce);
+  await shell.openExternal(target.toString());
 }
 
 // Windows and Linux: no system title bar. The page's top bar is the drag area, and the
@@ -992,6 +1025,11 @@ async function createWindow(): Promise<void> {
     return { action: "deny" };
   });
   win.webContents.on("will-navigate", (event, url) => {
+    if (origin() && url.startsWith(`${origin()}/api/auth/oidc/login`)) {
+      event.preventDefault();
+      void startSignIn(url);
+      return;
+    }
     if (url.startsWith("file://") || (origin() && url.startsWith(origin()))) return;
     // Single sign-on: the server redirects the window to the identity provider, which may
     // hand on to another (TinyAuth to Google). Those pages keep their cookies in this
