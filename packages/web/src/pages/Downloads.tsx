@@ -427,7 +427,7 @@ function DownloadsFolder({ onMessage }: { onMessage: (m: string) => void }) {
   );
 }
 
-const STAGES: Record<ImportProgress["stage"], string> = { copying: "Copying", unpacking: "Unpacking", cleaning: "Cleaning up", zipping: "Zipping" };
+const STAGES: Record<ImportProgress["stage"], string> = { copying: "Copying", unpacking: "Unpacking", installing: "Installing", cleaning: "Cleaning up", zipping: "Zipping" };
 
 /** "Unpacking 42%" with a bar; steps that can't measure themselves show a moving bar. */
 export function ImportMeter({ progress }: { progress: ImportProgress }) {

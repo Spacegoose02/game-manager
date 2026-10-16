@@ -73,6 +73,10 @@ export interface AppSettings {
   closeToTray: boolean;
   autoUpdate: boolean;
   openAtLogin: boolean;
+  /** Handheld mode; missing in older apps. */
+  handheld?: "auto" | "on" | "off";
+  handheldActive?: boolean;
+  looksHandheld?: boolean;
   trayAvailable: boolean;
   loginItemSupported: boolean;
 }
@@ -114,7 +118,7 @@ export interface DesktopBridge {
   changeServer(): Promise<void>;
   toggleFullscreen(): Promise<boolean>;
   /** Tray, start-up and update options (missing in apps before 0.9.1). */
-  appSettings?(patch?: Partial<Pick<AppSettings, "closeToTray" | "autoUpdate" | "openAtLogin">>): Promise<AppSettings>;
+  appSettings?(patch?: Partial<Pick<AppSettings, "closeToTray" | "autoUpdate" | "openAtLogin" | "handheld">>): Promise<AppSettings>;
   appUpdate?(action?: "status" | "check" | "install"): Promise<AppUpdate>;
   /** Quits the app for real (closing the window only hides it to the tray). */
   quit?(): Promise<void>;

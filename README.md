@@ -16,8 +16,10 @@ installs games from it on any PC in the house.
 - Desktop app for Windows and Linux: download with resume, unpack zip/7z/rar, delete the
   archives, play, track play time, uninstall. Runs in the tray and updates itself from the
   server.
-- Installers and disc images: run the installer once on a PC, then an admin can upload the
+- Installers and disc images: Inno Setup installers (most GOG games) are installed on the
+  server while a download is imported. Others run once on a PC, then an admin can upload the
   installed folder so everyone else gets a ready-to-play download.
+- Time to beat from HowLongToBeat, with IGDB's times as the fallback.
 - Updates and DLC are kept on their own page and applied over an installed game with a
   backup, so they can be undone.
 - Profiles: local accounts, OIDC or forward-auth sign-in, kid profiles that only see
@@ -140,6 +142,12 @@ both are set).
 The builds aren't code-signed, so Windows SmartScreen will warn (More info, Run anyway).
 zip and 7z work out of the box; RAR needs a full 7-Zip installed (`7zz` or `p7zip-full`
 on Linux). The `.deb` doesn't update itself; the other builds do.
+
+On a handheld (ROG Ally, Steam Deck, Legion Go) the app switches to **Handheld mode**: full
+screen, larger text and buttons, and it opens in front when started with the computer. Change
+it under Profile, This computer. A controller moves a selection box around the app; on the
+ROG Ally set Armoury Crate's Control Mode to Gamepad, as Auto treats LootDen as a desktop app
+and turns the controller into a mouse.
 
 ## Command-line client
 

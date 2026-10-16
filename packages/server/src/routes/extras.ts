@@ -154,10 +154,9 @@ export function extraRoutes(app: FastifyInstance, ctx: AppContext) {
     return { game: pool[Math.floor(Math.random() * pool.length)], from, poolSize: pool.length };
   });
 
-  /** How long to beat, in hours, from IGDB (needs IGDB keys). */
+  /** How long to beat, in hours: HowLongToBeat, else IGDB (with IGDB keys). */
   app.get<{ Params: { id: string } }>("/api/games/:id/time-to-beat", async (req) => {
     const g = visible(req, req.params.id);
-    if (!ctx.metadata.igdb.enabled) return null;
     return fail(async () => ctx.timeToBeat(g.metadata?.provider === "igdb" ? g.metadata.providerId : null, g.title));
   });
 

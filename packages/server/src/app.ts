@@ -43,6 +43,7 @@ import { WantedService } from "./news/wanted.js";
 import { VersionChecker } from "./news/version-check.js";
 import { JournalStore } from "./users/journal.js";
 import { NexusMods } from "./news/nexus.js";
+import { HowLongToBeat } from "./metadata/hltb.js";
 import { timeToBeat } from "./metadata/time-to-beat.js";
 import { SourceRegistry } from "./sources/registry.js";
 import { sourceRoutes } from "./routes/sources.js";
@@ -113,7 +114,7 @@ export function buildContext(config: ServerConfig, db: Db, log: Log, opts: Build
     journal: new JournalStore(db),
     nexus: new NexusMods(() => settings().nexus.apiKey, opts.fetchImpl),
     sources: new SourceRegistry(db, wishlist, notifier, opts.fetchImpl),
-    timeToBeat: timeToBeat(metadata.igdb),
+    timeToBeat: timeToBeat(metadata.igdb, new HowLongToBeat(opts.fetchImpl), () => settings().hltb.enabled !== false),
   };
 }
 

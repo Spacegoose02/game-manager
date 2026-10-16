@@ -51,6 +51,8 @@ interface Frame {
   custom: boolean;
   fullscreen: boolean;
   height: number;
+  /** Handheld mode: the page uses its couch layout. Missing in older apps. */
+  handheld?: boolean;
 }
 let frame: Frame | null = null;
 const markFrame = () => {
@@ -59,6 +61,8 @@ const markFrame = () => {
   if (!frame.custom) delete root.dataset.lootdenFrame;
   else root.dataset.lootdenFrame = frame.fullscreen ? "fullscreen" : "hidden";
   root.style.setProperty("--lootden-titlebar", `${frame.height}px`);
+  if (frame.handheld) root.dataset.handheld = "on";
+  else delete root.dataset.handheld;
 };
 const setFrame = (f: Frame) => {
   frame = f;

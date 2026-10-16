@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, Notification, session, shell, Tray, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, Notification, screen, session, shell, Tray, type IpcMainInvokeEvent } from "electron";
 import {
   addBiosFile,
   adoptFolder,
@@ -258,7 +258,30 @@ function createTray(): void {
 
 function applyLoginItem(s: DesktopSettings): void {
   if (process.platform !== "win32" && process.platform !== "darwin") return;
-  app.setLoginItemSettings({ openAtLogin: s.openAtLogin, args: ["--hidden"] });
+  // A handheld opens LootDen in front at login, like a console's home screen; elsewhere it starts in the tray.
+  app.setLoginItemSettings({ openAtLogin: s.openAtLogin, args: handheldActive(s) ? [] : ["--hidden"] });
+}
+
+// ---- Handheld mode ------------------------------------------------------------------
+
+/** A small touchscreen PC: ROG Ally and Ally X (1280x720 at 150%), Steam Deck and Legion Go (1280x800), MSI Claw. */
+function looksHandheld(): boolean {
+  const d = screen.getPrimaryDisplay();
+  const long = Math.max(d.size.width, d.size.height);
+  const short = Math.min(d.size.width, d.size.height);
+  return d.touchSupport === "available" && long <= 1440 && short <= 900;
+}
+
+const handheldActive = (s: DesktopSettings) => s.handheld === "on" || (s.handheld === "auto" && looksHandheld());
+/** Everything a little larger, so text and buttons read at arm's length on a 7-8" screen. */
+const HANDHELD_ZOOM = 1.2;
+
+function applyHandheld(): void {
+  if (!win) return;
+  const on = handheldActive(settings.get());
+  win.webContents.setZoomFactor(on ? HANDHELD_ZOOM : 1);
+  if (on && !win.isFullScreen()) win.setFullScreen(true);
+  sendFrame();
 }
 
 // ---- App updates from the server --------------------------------------------------
@@ -856,17 +879,32 @@ function registerIpc(): void {
     await shell.openPath((await findInstalled(gameId)).dir);
   });
 
-  ipcMain.handle("gm:appSettings", (e, patch?: Partial<Pick<DesktopSettings, "closeToTray" | "autoUpdate" | "openAtLogin">>) => {
+  ipcMain.handle("gm:appSettings", (e, patch?: Partial<Pick<DesktopSettings, "closeToTray" | "autoUpdate" | "openAtLogin" | "handheld">>) => {
     fromServer(e);
     if (patch) {
       const clean: Partial<DesktopSettings> = {};
       for (const k of ["closeToTray", "autoUpdate", "openAtLogin"] as const) if (typeof patch[k] === "boolean") clean[k] = patch[k];
+      if (patch.handheld && ["auto", "on", "off"].includes(patch.handheld)) clean.handheld = patch.handheld;
       const s = settings.update(clean);
-      if ("openAtLogin" in clean) applyLoginItem(s);
+      if ("openAtLogin" in clean || clean.handheld) applyLoginItem(s);
+      if (clean.handheld) {
+        // Turning it off leaves full screen too, unless full screen was chosen on its own.
+        if (!handheldActive(s) && win?.isFullScreen() && !s.fullscreen) win.setFullScreen(false);
+        applyHandheld();
+      }
       if (clean.autoUpdate) void checkForUpdate();
     }
     const s = settings.get();
-    return { closeToTray: s.closeToTray, autoUpdate: s.autoUpdate, openAtLogin: s.openAtLogin, trayAvailable: !!tray, loginItemSupported: process.platform === "win32" || process.platform === "darwin" };
+    return {
+      closeToTray: s.closeToTray,
+      autoUpdate: s.autoUpdate,
+      openAtLogin: s.openAtLogin,
+      handheld: s.handheld,
+      handheldActive: handheldActive(s),
+      looksHandheld: looksHandheld(),
+      trayAvailable: !!tray,
+      loginItemSupported: process.platform === "win32" || process.platform === "darwin",
+    };
   });
 
   ipcMain.handle("gm:appUpdate", async (e, action: "status" | "check" | "install" = "status") => {
@@ -922,7 +960,7 @@ async function openDeepLink(link: string): Promise<void> {
 // snapping and double-click to maximize keep working. macOS keeps its own title bar.
 const customFrame = process.platform !== "darwin";
 const TITLEBAR_HEIGHT = 40;
-const frameState = () => ({ custom: customFrame, fullscreen: !!win?.isFullScreen(), height: TITLEBAR_HEIGHT });
+const frameState = () => ({ custom: customFrame, fullscreen: !!win?.isFullScreen(), height: TITLEBAR_HEIGHT, handheld: handheldActive(settings.get()) });
 const sendFrame = () => win?.webContents.send("gm:frame", frameState());
 
 async function createWindow(): Promise<void> {
@@ -933,8 +971,8 @@ async function createWindow(): Promise<void> {
     minWidth: 800,
     minHeight: 560,
     backgroundColor: "#0d0820",
-    fullscreen: s.fullscreen,
-    show: !(startHidden && tray),
+    fullscreen: s.fullscreen || handheldActive(s),
+    show: !(startHidden && tray && !handheldActive(s)),
     autoHideMenuBar: true,
     title: "LootDen",
     ...(customFrame ? { titleBarStyle: "hidden" as const, titleBarOverlay: { color: "#0d0820", symbolColor: "#f3eeff", height: TITLEBAR_HEIGHT } } : {}),
@@ -966,6 +1004,8 @@ async function createWindow(): Promise<void> {
     if (update.state === "ready" && !busy() && settings.get().autoUpdate) void installNow();
   });
   win.on("closed", () => (win = null));
+  // Zoom is kept per page load, and the server's address can change.
+  win.webContents.on("did-finish-load", () => win?.webContents.setZoomFactor(handheldActive(settings.get()) ? HANDHELD_ZOOM : 1));
   win.on("enter-full-screen", sendFrame);
   win.on("leave-full-screen", sendFrame);
   win.webContents.on("before-input-event", (_e, input) => {

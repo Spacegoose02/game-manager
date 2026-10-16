@@ -13,6 +13,8 @@ export interface DesktopSettings {
   keepArchives: boolean;
   /** Start in fullscreen "couch" mode (handhelds, TVs). */
   fullscreen: boolean;
+  /** Handheld mode: full screen, larger UI, opens in front at login. "auto" turns it on for small touchscreen PCs (ROG Ally, Steam Deck, Legion Go). */
+  handheld: "auto" | "on" | "off";
   /** Emulators, their BIOS files and saves. Empty means the app's data folder. */
   toolsDir: string;
   /** Closing the window keeps the app in the system tray, tracking play time and installs. */
@@ -27,7 +29,7 @@ export interface DesktopSettings {
 
 export function defaultSettings(): DesktopSettings {
   const installDir = process.platform === "win32" ? "C:\\Games" : path.join(os.homedir(), "Games");
-  return { serverUrl: "", apiToken: "", installDir, libraryDirs: [installDir], keepArchives: false, fullscreen: false, toolsDir: "", closeToTray: true, autoUpdate: true, openAtLogin: false, trayHintShown: false };
+  return { serverUrl: "", apiToken: "", installDir, libraryDirs: [installDir], keepArchives: false, fullscreen: false, handheld: "auto", toolsDir: "", closeToTray: true, autoUpdate: true, openAtLogin: false, trayHintShown: false };
 }
 
 export class SettingsStore {

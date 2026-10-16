@@ -116,7 +116,7 @@ export interface Connectors {
   import: {
     mode: "copy" | "move" | "off";
     pathMappings: Array<{ from: string; to: string }>;
-    tidy: { stripJunk: boolean; extract: boolean; repack: "zip" | "folder" };
+    tidy: { stripJunk: boolean; extract: boolean; repack: "zip" | "folder"; installers?: boolean };
     folder: string;
     autoImportFolder: boolean;
   };
@@ -126,6 +126,7 @@ export interface Connectors {
   notify: { appriseUrl: string; appriseTargets: string } & Record<"released" | "found" | "grabbed" | "imported" | "updates" | "flagged" | "sources", boolean>;
   scan: { clamav: "off" | "clamd" | "clamscan"; clamdHost: string; clamdPort: number; virusTotalKey: string; hold: boolean };
   nexus: { apiKey: string };
+  hltb: { enabled: boolean };
 }
 
 export interface SourceConfig {
@@ -213,6 +214,9 @@ export interface TimeToBeat {
   normally: number | null;
   completely: number | null;
   count: number;
+  /** Missing from servers before HowLongToBeat support (always IGDB then). */
+  source?: "hltb" | "igdb";
+  url?: string;
 }
 
 export interface NexusMod {
@@ -319,7 +323,7 @@ export interface DownloadRecord {
 }
 
 export interface ImportProgress {
-  stage: "copying" | "unpacking" | "cleaning" | "zipping";
+  stage: "copying" | "unpacking" | "installing" | "cleaning" | "zipping";
   percent: number | null;
 }
 

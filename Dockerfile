@@ -60,6 +60,9 @@ RUN case "${TARGETARCH:-$(uname -m)}" in \
     && mkdir -p /games /data \
     && sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
     && chmod 755 /usr/local/bin/docker-entrypoint.sh
+# innoextract unpacks Inno Setup installers (most GOG games) during import, so PCs get the game
+# ready to play. Without it (an architecture Alpine doesn't build it for) installers run on a PC.
+RUN apk add --no-cache innoextract || echo "innoextract isn't available here; installers will run on PCs"
 EXPOSE 8080
 VOLUME ["/data"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \

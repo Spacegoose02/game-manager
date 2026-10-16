@@ -1,19 +1,27 @@
+import type { HowLongToBeat } from "./hltb.js";
 import type { IgdbProvider } from "./igdb.js";
 
 export interface TimeToBeat {
-  /** Hours, rounded to the half hour; null when IGDB has no answer. */
+  /** Hours, rounded to the half hour; null when there's no answer. */
   main: number | null;
   normally: number | null;
   completely: number | null;
   count: number;
+  source: "hltb" | "igdb";
+  /** The game's HowLongToBeat page. */
+  url?: string;
 }
 
 const hours = (s?: number | null) => (s ? Math.round((s / 3600) * 2) / 2 : null);
 
-/** How long a game takes, from IGDB's player-submitted times (game_time_to_beats). */
-export function timeToBeat(igdb: IgdbProvider) {
+/**
+ * How long a game takes: HowLongToBeat first (what most players quote), then IGDB's
+ * player-submitted times (game_time_to_beats) when HowLongToBeat is off, unreachable or has no match.
+ */
+export function timeToBeat(igdb: IgdbProvider, hltb: HowLongToBeat | null, useHltb: () => boolean) {
   const cache = new Map<string, TimeToBeat | null>();
-  return async (providerId: string | null, title: string): Promise<TimeToBeat | null> => {
+  const fromIgdb = async (providerId: string | null, title: string): Promise<TimeToBeat | null> => {
+    if (!igdb.enabled) return null;
     const key = providerId ?? `t:${title.toLowerCase()}`;
     if (cache.has(key)) return cache.get(key)!;
     let id = providerId && /^\d+$/.test(providerId) ? providerId : null;
@@ -23,8 +31,15 @@ export function timeToBeat(igdb: IgdbProvider) {
     }
     const rows = id ? await igdb.raw<{ hastily?: number; normally?: number; completely?: number; count?: number }>("game_time_to_beats", `fields hastily,normally,completely,count; where game_id = ${id};`) : [];
     const r = rows[0];
-    const result = r ? { main: hours(r.hastily), normally: hours(r.normally), completely: hours(r.completely), count: r.count ?? 0 } : null;
+    const result = r ? { main: hours(r.hastily), normally: hours(r.normally), completely: hours(r.completely), count: r.count ?? 0, source: "igdb" as const } : null;
     cache.set(key, result);
     return result;
+  };
+  return async (providerId: string | null, title: string): Promise<TimeToBeat | null> => {
+    if (hltb && useHltb()) {
+      const t = await hltb.forTitle(title).catch(() => null);
+      if (t && (t.main || t.normally || t.completely)) return { ...t, source: "hltb" };
+    }
+    return fromIgdb(providerId, title);
   };
 }

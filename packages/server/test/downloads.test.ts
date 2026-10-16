@@ -331,6 +331,51 @@ describe("download tidy rules", () => {
     }
   });
 
+  it("installs an Inno Setup installer on the server, and keeps any other installer for a PC", async () => {
+    const { tidyDownload } = await import("../src/connectors/tidy.js");
+    const tmp = await mkdtemp(path.join(os.tmpdir(), "lootden-inno-"));
+    try {
+      const games = path.join(tmp, "games");
+      await mkdir(games);
+      // Stands in for innoextract: unpacks {app} and {tmp} like a GOG installer, or fails like a non-Inno one.
+      const fake = path.join(tmp, "innoextract");
+      await writeFile(
+        fake,
+        `#!/bin/sh
+for a in "$@"; do [ "$prev" = "--output-dir" ] && out="$a"; prev="$a"; setup="$a"; done
+case "$setup" in *nsis*) echo "Not a supported Inno Setup installer" >&2; exit 1;; esac
+mkdir -p "$out/app/bin" "$out/tmp" && echo game > "$out/app/bin/Game.exe" && echo helper > "$out/tmp/isxdl.dll"
+`,
+        { mode: 0o755 },
+      );
+      const stage = async (n: number, setup: string) => {
+        const staging = path.join(tmp, `.import-${n}`);
+        await mkdir(path.join(staging, "Game"), { recursive: true });
+        await writeFile(path.join(staging, "Game", setup), "MZ");
+        await writeFile(path.join(staging, "Game", setup.replace(".exe", "-1.bin")), "data");
+        return staging;
+      };
+      const opts = { stripJunk: true, extract: true, repack: "folder" as const };
+
+      const inno = await stage(3, "setup_game_1.2_(1234).exe");
+      const report = await tidyDownload(inno, "Game.v1.2-GOG", games, opts, null, () => {}, fake);
+      assert.equal(path.basename(report.target), "Game v1.2");
+      assert.deepEqual(await readdir(report.target, { recursive: true }), ["bin", path.join("bin", "Game.exe")]);
+      assert.deepEqual((await readdir(tmp)).sort(), ["games", "innoextract"], "the work folders are gone");
+
+      const nsis = await stage(4, "setup_nsis.exe");
+      const kept = await tidyDownload(nsis, "Other.v2", games, opts, null, () => {}, fake);
+      assert.ok((await readdir(kept.target)).includes("setup_nsis.exe"));
+      assert.match(kept.warnings.join(" "), /only Inno Setup/);
+
+      const off = await stage(5, "setup_game_1.2_(1234).exe");
+      const skipped = await tidyDownload(off, "Third.v3", games, { ...opts, installers: false }, null, () => {}, fake);
+      assert.ok((await readdir(skipped.target)).includes("setup_game_1.2_(1234).exe"));
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
   it("refuses to import an empty or fake archive", async () => {
     const { tidyDownload } = await import("../src/connectors/tidy.js");
     const tmp = await mkdtemp(path.join(os.tmpdir(), "lootden-tidy-"));

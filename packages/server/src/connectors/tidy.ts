@@ -13,9 +13,11 @@ export interface TidyOptions {
   extract: boolean;
   /** "zip" packs the cleaned game into "<Title> v<version>.zip"; "folder" leaves a folder with that name. */
   repack: "zip" | "folder";
+  /** Unpack Inno Setup installers (most GOG games) on the server, so PCs get the game ready to play. On unless false. */
+  installers?: boolean;
 }
 
-export const DEFAULT_TIDY: TidyOptions = { stripJunk: true, extract: true, repack: "zip" };
+export const DEFAULT_TIDY: TidyOptions = { stripJunk: true, extract: true, repack: "zip", installers: true };
 
 /** Files that are always release clutter, wherever they are. */
 const JUNK_ANYWHERE = /\.(url|website|lnk|webloc|nfo|sfv|diz|torrent|md5|sha1|par2)$|^(thumbs\.db|desktop\.ini|\.ds_store)$/i;
@@ -105,9 +107,49 @@ export async function findServerSevenZip(): Promise<{ path: string; rar: boolean
   return null;
 }
 
+/** innoextract, which unpacks Inno Setup installers without running them (the Docker image has it). */
+export async function findInnoextract(): Promise<string | null> {
+  const exe = async (p: string) => access(p, constants.X_OK).then(() => true, () => false);
+  const own = process.env.LOOTDEN_INNOEXTRACT_PATH ?? process.env.GM_INNOEXTRACT_PATH;
+  if (own) return (await exe(own)) ? own : null;
+  for (const dir of (process.env.PATH ?? "").split(path.delimiter)) if (dir && (await exe(path.join(dir, "innoextract")))) return path.join(dir, "innoextract");
+  return null;
+}
+
+/**
+ * Installs an installer game on the server: unpacks its Inno Setup installer (setup_*.exe and
+ * its .bin parts) into `out` and returns the folder holding the game (Inno's {app} folder).
+ * Null, leaving everything as it was, when it isn't an Inno Setup installer or nothing playable
+ * came out; those still get set up on a PC.
+ */
+export async function unpackInstaller(root: string, out: string, bin: string, onProgress: ProgressFn = () => {}): Promise<string | null> {
+  const files = (await walk(root)).filter((f) => !f.dir);
+  const setup = files
+    .filter((f) => f.depth <= 1 && /^setup[^/\\]*\.exe$/i.test(f.name))
+    .sort((a, b) => a.depth - b.depth || a.name.length - b.name.length)[0];
+  if (!setup) return null;
+  await rm(out, { recursive: true, force: true });
+  onProgress({ stage: "installing", percent: null });
+  try {
+    // The game lands in "app" (Inno's {app}); --exclude-temp leaves out the installer's own helper files.
+    await runTool(bin, ["--silent", "--exclude-temp", "--output-dir", out, setup.path]);
+  } catch {
+    await rm(out, { recursive: true, force: true });
+    return null;
+  }
+  const app = path.join(out, "app");
+  const installed = (await stat(app).catch(() => null))?.isDirectory() ? (await walk(app)).filter((f) => !f.dir) : [];
+  const playable = installed.some((f) => /\.exe$/i.test(f.name)) && setupKindOf(installed.map((f) => ({ path: path.relative(app, f.path) }))) === null;
+  if (!playable) {
+    await rm(out, { recursive: true, force: true });
+    return null;
+  }
+  return app;
+}
+
 /** Where an import is: the step and how far through it (null when the step can't tell). */
 export interface ImportProgress {
-  stage: "copying" | "unpacking" | "cleaning" | "zipping";
+  stage: "copying" | "unpacking" | "installing" | "cleaning" | "zipping";
   percent: number | null;
 }
 export type ProgressFn = (p: ImportProgress) => void;
@@ -125,6 +167,17 @@ function run(bin: string, args: string[], cwd?: string, onPercent?: (n: number) 
     child.stderr?.on("data", (d) => (err += d.toString()));
     child.on("error", reject);
     child.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`7-Zip exited with code ${code}: ${err.trim().slice(0, 300)}`))));
+  });
+}
+
+/** Runs a command-line tool, failing with the end of its error output. */
+function runTool(bin: string, args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(bin, args, { stdio: ["ignore", "ignore", "pipe"] });
+    let err = "";
+    child.stderr.on("data", (d) => (err += d.toString()));
+    child.on("error", reject);
+    child.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`${path.basename(bin)} exited with code ${code}: ${err.trim().slice(-300)}`))));
   });
 }
 
@@ -156,6 +209,7 @@ export async function tidyDownload(
   opts: TidyOptions,
   sevenZip: { path: string; rar: boolean } | null,
   onProgress: ProgressFn = () => {},
+  innoextract: string | null = null,
 ): Promise<TidyReport> {
   const report: TidyReport = { target: "", removed: [], extracted: [], warnings: [] };
 
@@ -216,6 +270,24 @@ export async function tidyDownload(
   if (top.length === 1 && top[0]!.isDirectory()) root = path.join(staging, top[0]!.name);
   if ((await readdir(root)).length === 0) throw new Error("Nothing left after cleaning up the download");
 
+  // An installer is installed here instead of on every PC: unpacked to the game's folder, then zipped like any game.
+  const installedTo = `${staging}.installed`;
+  let installedRoot: string | null = null;
+  if (opts.installers !== false && setupKindOf((await walk(root)).filter((f) => !f.dir).map((f) => ({ path: path.relative(root, f.path) }))) === "installer") {
+    if (!innoextract) report.warnings.push("innoextract isn't installed on the server, so the installer is kept for a PC to run");
+    else {
+      installedRoot = await unpackInstaller(root, installedTo, innoextract, onProgress);
+      if (installedRoot) {
+        report.extracted.push(`${path.relative(staging, root) || "."} (installer)`);
+        root = installedRoot;
+      } else report.warnings.push("The installer isn't one the server can unpack (only Inno Setup ones, like GOG's), so a PC runs it");
+    }
+  }
+  const cleanup = async () => {
+    await rm(staging, { recursive: true, force: true });
+    await rm(installedTo, { recursive: true, force: true });
+  };
+
   const name = tidyName(releaseName);
   // An archive the server couldn't unpack stays loose, so the PC unpacks it on install;
   // zipped up, it would come out of the zip still packed and be copied over the game as a file.
@@ -233,14 +305,14 @@ export async function tidyDownload(
     onProgress({ stage: "zipping", percent: 0 });
     await run(sevenZip.path, ["a", "-tzip", "-mx1", "-bd", "-y", temp, "*"], root, (n) => onProgress({ stage: "zipping", percent: n }));
     await rename(temp, target);
-    await rm(staging, { recursive: true, force: true });
+    await cleanup();
     report.target = target;
   } else {
     if (opts.repack === "zip" && !sevenZip) report.warnings.push("7-Zip isn't installed on the server, so the game was kept as a folder");
     const target = path.join(gamesDir, name);
     if (await stat(target).catch(() => null)) throw new Error(`${name} already exists in the games folder`);
     await rename(root, target);
-    if (root !== staging) await rm(staging, { recursive: true, force: true });
+    if (root !== staging) await cleanup();
     report.target = target;
   }
   return report;

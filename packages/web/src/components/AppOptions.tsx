@@ -53,7 +53,7 @@ export function AppOptions() {
   if (!bridge.appSettings || !bridge.quit) {
     return <p className="muted small">Update the LootDen app to choose tray, start-up and update options here.</p>;
   }
-  const set = (patch: Partial<Pick<AppSettings, "closeToTray" | "autoUpdate" | "openAtLogin">>) =>
+  const set = (patch: Partial<Pick<AppSettings, "closeToTray" | "autoUpdate" | "openAtLogin" | "handheld">>) =>
     bridge.appSettings!(patch).then(setOpts, (e) => setError(bridgeError(e)));
   const run = (fn: () => Promise<unknown>) => fn().catch((e) => setError(bridgeError(e)));
   return (
@@ -77,6 +77,19 @@ export function AppOptions() {
             <input type="checkbox" checked={opts.autoUpdate} onChange={(e) => void set({ autoUpdate: e.target.checked })} />
             Install app updates automatically
           </label>
+          {opts.handheld && (
+            <label className="field">
+              <span className="field-label">Handheld mode</span>
+              <select value={opts.handheld} onChange={(e) => void set({ handheld: e.target.value as "auto" | "on" | "off" })}>
+                <option value="auto">Automatic{opts.looksHandheld ? " (on for this PC)" : " (off for this PC)"}</option>
+                <option value="on">On</option>
+                <option value="off">Off</option>
+              </select>
+              <small className="muted">
+                Full screen with larger text and buttons, for the ROG Ally, Steam Deck and other handhelds or a TV. Starting with the computer opens LootDen in front instead of in the tray.
+              </small>
+            </label>
+          )}
         </div>
       )}
       <div className="inline app-update">

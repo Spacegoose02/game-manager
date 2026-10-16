@@ -54,6 +54,8 @@ export interface ConnectorSettings {
   scan: { clamav: "off" | "clamd" | "clamscan"; clamdHost: string; clamdPort: number; virusTotalKey: string; hold: boolean };
   /** NexusMods API key for trending mods on game pages. */
   nexus: { apiKey: string };
+  /** Time to beat from HowLongToBeat (unofficial; IGDB's times are the fallback). */
+  hltb: { enabled: boolean };
 }
 
 export const DEFAULT_RULES: ReleaseRules = {
@@ -82,6 +84,7 @@ export const DEFAULT_CONNECTORS: ConnectorSettings = {
   notify: { appriseUrl: "", appriseTargets: "", released: true, found: true, grabbed: true, imported: true, updates: true, flagged: true, sources: true },
   scan: { clamav: "off", clamdHost: "clamav", clamdPort: 3310, virusTotalKey: "", hold: true },
   nexus: { apiKey: "" },
+  hltb: { enabled: true },
 };
 
 const KEY = "connectors";

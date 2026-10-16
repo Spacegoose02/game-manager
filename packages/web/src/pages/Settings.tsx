@@ -443,7 +443,13 @@ function DownloadsSection({ say }: { say: Msg }) {
           </Field>
         </div>
         <Toggle checked={c.import.tidy.stripJunk} onChange={(v) => set("import", { tidy: { ...c.import.tidy, stripJunk: v } })} label="Remove junk" hint={'Site links, .nfo files, read-me and "install tutorial" files'} />
-        <Toggle checked={c.import.tidy.extract} onChange={(v) => set("import", { tidy: { ...c.import.tidy, extract: v } })} label="Unpack archives" hint="Including archives inside archives. Disc images and installers stay as folders." />
+        <Toggle checked={c.import.tidy.extract} onChange={(v) => set("import", { tidy: { ...c.import.tidy, extract: v } })} label="Unpack archives" hint="Including archives inside archives. Disc images stay as folders." />
+        <Toggle
+          checked={c.import.tidy.installers !== false}
+          onChange={(v) => set("import", { tidy: { ...c.import.tidy, installers: v } })}
+          label="Install installer games on the server"
+          hint="Unpacks Inno Setup installers, which most GOG games use, so PCs download the game ready to play. Other installers still run on a PC."
+        />
         <Field label="Downloads folder" hint="As this container sees it. Games sitting there are listed on the Downloads page." wide>
           <input placeholder="/downloads/complete" value={c.import.folder} onChange={(e) => set("import", { folder: e.target.value })} />
         </Field>
@@ -688,6 +694,14 @@ function ServicesSection({ say }: { say: Msg }) {
             >
               <input type="password" value={c.nexus.apiKey} onChange={(e) => set("nexus", { apiKey: e.target.value })} />
             </Field>
+          </div>
+          <div className="toggle-list">
+            <Toggle
+              checked={c.hltb?.enabled !== false}
+              onChange={(v) => set("hltb", { enabled: v })}
+              label="Time to beat from HowLongToBeat"
+              hint="Main story, extras and completionist hours on game pages. HowLongToBeat has no official API, so when it can't be reached IGDB's times show instead (with IGDB keys)."
+            />
           </div>
         </Card>
       )}

@@ -89,7 +89,7 @@ export function JournalPanel({ gameId }: { gameId: string }) {
       <div className="journal-head">
         <h2>My journal</h2>
         {ttb && (ttb.main || ttb.normally || ttb.completely) ? (
-          <div className="ttb" title={`From ${ttb.count} IGDB players`}>
+          <div className="ttb" title={ttb.source === "hltb" ? `From ${ttb.count.toLocaleString()} HowLongToBeat players` : `From ${ttb.count} IGDB players`}>
             <span>
               <small className="muted">Main story</small>
               <strong>{hrs(ttb.main)}</strong>
@@ -102,6 +102,11 @@ export function JournalPanel({ gameId }: { gameId: string }) {
               <small className="muted">Completionist</small>
               <strong>{hrs(ttb.completely)}</strong>
             </span>
+            {ttb.source === "hltb" && ttb.url && (
+              <a className="small muted" href={ttb.url} target="_blank" rel="noreferrer">
+                HowLongToBeat
+              </a>
+            )}
           </div>
         ) : null}
       </div>

@@ -14,7 +14,7 @@ import { resolveTorrent } from "./torrent.js";
 import { TransmissionClient } from "./transmission.js";
 import { SabnzbdClient } from "./sabnzbd.js";
 import { loadConnectorSettings, type ConnectorSettings } from "./settings.js";
-import { findServerSevenZip, tidyDownload, type ImportProgress, type ProgressFn, type TidyOptions } from "./tidy.js";
+import { findInnoextract, findServerSevenZip, tidyDownload, type ImportProgress, type ProgressFn, type TidyOptions } from "./tidy.js";
 import type { ActiveDownload, DownloadClient, TorrentClient } from "./types.js";
 import { judgeRelease, type Judged } from "./rules.js";
 
@@ -477,11 +477,12 @@ export class DownloadManager {
       await this.place(source, path.join(staging, path.basename(source)), mode, report);
     }
     try {
-      const tidied = await tidyDownload(staging, releaseName || path.basename(source), targetDir, tidy, await findServerSevenZip(), report);
+      const tidied = await tidyDownload(staging, releaseName || path.basename(source), targetDir, tidy, await findServerSevenZip(), report, platform ? null : await findInnoextract());
       this.log.info({ name: releaseName, removed: tidied.removed, extracted: tidied.extracted, warnings: tidied.warnings }, "Tidied download");
       return tidied.target;
     } catch (err) {
       await rm(staging, { recursive: true, force: true });
+      await rm(`${staging}.installed`, { recursive: true, force: true });
       throw err;
     }
   }
