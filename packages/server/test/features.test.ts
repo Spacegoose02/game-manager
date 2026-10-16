@@ -9,6 +9,7 @@ import { parseClamOutput } from "../src/connectors/scan.js";
 import { DEFAULT_RULES, loadConnectorSettings, maskedConnectorSettings, saveConnectorSettings } from "../src/connectors/settings.js";
 import { TransmissionClient } from "../src/connectors/transmission.js";
 import type { SearchResult } from "../src/connectors/prowlarr.js";
+import { NexusMods } from "../src/news/nexus.js";
 import { isReleased } from "../src/news/wanted.js";
 import { compareVersions, versionIn } from "../src/news/version-check.js";
 import { makeApp, makeLibrary } from "./helpers.js";
@@ -310,5 +311,22 @@ describe("wanted list, rules, alerts, scans, updates, journal and stats", () => 
     assert.equal(mods.domain, "thesims4");
     assert.deepEqual(mods.mods.map((m: { name: string }) => m.name), ["Better UI"]);
     assert.equal(mods.mods[0].url, "https://www.nexusmods.com/thesims4/mods/1");
+    assert.equal(mods.configured, true);
+  });
+
+  it("matches NexusMods games without subtitles or editions, and tests the key", async () => {
+    const fetchImpl = (async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/v1/games.json") return Response.json([{ name: "The Witcher 3", domain_name: "witcher3" }, { name: "Fallout 4", domain_name: "fallout4" }, { name: "Skyrim Special Edition", domain_name: "skyrimspecialedition" }]);
+      if (url.pathname === "/v1/users/validate.json") return Response.json({ name: "raccoon" });
+      return new Response("nope", { status: 404 });
+    }) as typeof fetch;
+    const nexus = new NexusMods(() => "nx", fetchImpl);
+    assert.equal(await nexus.domainFor("The Witcher 3: Wild Hunt"), "witcher3");
+    assert.equal(await nexus.domainFor("Fallout 4 Game of the Year Edition"), "fallout4");
+    assert.equal(await nexus.domainFor("Skyrim Special Edition"), "skyrimspecialedition");
+    assert.equal(await nexus.domainFor("Celeste"), null);
+    assert.match(await nexus.test(), /raccoon/);
+    await assert.rejects(new NexusMods(() => "", fetchImpl).test(), /Add a NexusMods API key/);
   });
 });

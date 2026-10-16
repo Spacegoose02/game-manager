@@ -164,8 +164,13 @@ export function extraRoutes(app: FastifyInstance, ctx: AppContext) {
   // ---- Mods ----------------------------------------------------------------
   app.get<{ Params: { id: string } }>("/api/games/:id/mods", async (req) => {
     const g = visible(req, req.params.id);
-    if (requireUser(req).kidMode || !ctx.nexus.enabled) return { domain: null, mods: [] };
-    return fail(() => ctx.nexus.forTitle(g.title));
+    if (requireUser(req).kidMode) return { configured: false, domain: null, mods: [] };
+    if (!ctx.nexus.enabled) return { configured: false, domain: null, mods: [] };
+    return { configured: true, ...(await fail(() => ctx.nexus.forTitle(g.title))) };
+  });
+  app.post("/api/mods/test", async (req) => {
+    requireAdmin(req);
+    return { ok: true, message: await fail(() => ctx.nexus.test()) };
   });
 
   // ---- Library stats ----------------------------------------------------------------

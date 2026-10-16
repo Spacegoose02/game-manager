@@ -154,6 +154,36 @@ code {
   outline-offset: 3px;
   border-radius: 8px;
 }
+/* With a controller the selection box (gamepad.ts) marks the focused item instead, drawn over the
+   page so scrolling rows can't clip it, and shown even after a tap, which :focus-visible isn't. */
+:root[data-nav="pad"] :focus-visible {
+  outline: none;
+}
+.pad-ring {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 10000;
+  pointer-events: none;
+  border: 3px solid var(--accent-2);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--bg) 70%, transparent),
+    0 0 18px 2px color-mix(in srgb, var(--accent-2) 55%, transparent);
+  opacity: 0;
+  transition:
+    transform 0.12s ease-out,
+    width 0.12s ease-out,
+    height 0.12s ease-out,
+    opacity 0.12s;
+}
+.pad-ring.on {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pad-ring {
+    transition: opacity 0.12s;
+  }
+}
 
 /* ---------- Controls ---------------------------------------------------- */
 
@@ -342,7 +372,8 @@ main {
   transition: transform 0.15s, background 0.15s;
 }
 .card:hover,
-.card:focus-visible {
+.card:focus-visible,
+:root[data-nav="pad"] .card:focus {
   transform: translateY(-4px) scale(1.02);
   background: var(--panel);
 }
@@ -848,7 +879,8 @@ textarea {
   background: var(--bg-2);
 }
 .art-option:hover,
-.art-option:focus-visible {
+.art-option:focus-visible,
+:root[data-nav="pad"] .art-option:focus {
   border-color: var(--accent);
 }
 .art-option img {
@@ -955,7 +987,8 @@ button.chip {
   font-weight: 400;
 }
 .video-card:hover,
-.video-card:focus-visible {
+.video-card:focus-visible,
+:root[data-nav="pad"] .video-card:focus {
   background: var(--panel);
 }
 .video-thumb {
@@ -1304,7 +1337,8 @@ button.small,
   transition: transform 0.12s ease;
 }
 .system-tile:hover,
-.system-tile:focus-visible {
+.system-tile:focus-visible,
+:root[data-nav="pad"] .system-tile:focus {
   transform: translateY(-2px);
 }
 .system-short {
@@ -2545,7 +2579,8 @@ label.field {
   border-radius: 0;
 }
 .cover-tile:hover,
-.cover-tile:focus-visible {
+.cover-tile:focus-visible,
+:root[data-nav="pad"] .cover-tile:focus {
   transform: scale(1.06);
   z-index: 1;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
@@ -2562,7 +2597,8 @@ label.field {
   transition: opacity 0.12s;
 }
 .cover-tile:hover .cover-tile-name,
-.cover-tile:focus-visible .cover-tile-name {
+.cover-tile:focus-visible .cover-tile-name,
+:root[data-nav="pad"] .cover-tile:focus .cover-tile-name {
   opacity: 1;
 }
 .cover-tile.is-installed::after {

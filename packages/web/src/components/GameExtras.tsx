@@ -152,34 +152,46 @@ export function JournalPanel({ gameId }: { gameId: string }) {
   );
 }
 
-/** Trending NexusMods mods for this game (needs a NexusMods key in Settings). */
-export function ModsPanel({ gameId }: { gameId: string }) {
-  const [data, setData] = useState<{ domain: string | null; mods: NexusMod[] } | null>(null);
+/** Trending NexusMods mods for this game, once a NexusMods key is saved in Settings. */
+export function ModsPanel({ gameId, title }: { gameId: string; title: string }) {
+  const [data, setData] = useState<{ configured: boolean; domain: string | null; mods: NexusMod[] } | null>(null);
+  const [error, setError] = useState("");
   useEffect(() => {
     setData(null);
-    api.mods(gameId).then(setData, () => setData(null));
+    setError("");
+    api.mods(gameId).then(setData, (e: Error) => setError(e.message));
   }, [gameId]);
-  if (!data?.mods.length) return null;
+  // With a key saved the section always shows, so a title NexusMods doesn't know (or a rejected key) says so instead of vanishing.
+  if (!error && !data?.configured) return null;
+  const search = `https://www.nexusmods.com/games?keyword=${encodeURIComponent(title)}`;
   return (
     <section className="row mods">
       <div className="inline" style={{ justifyContent: "space-between" }}>
         <h2>Trending mods</h2>
-        <a className="small" href={`https://www.nexusmods.com/${data.domain}/mods/trending`} target="_blank" rel="noreferrer">
-          More on NexusMods
+        <a className="small" href={data?.domain ? `https://www.nexusmods.com/${data.domain}/mods/trending` : search} target="_blank" rel="noreferrer">
+          {data?.domain ? "More on NexusMods" : "Search NexusMods"}
         </a>
       </div>
-      <div className="row-track mod-track">
-        {data.mods.map((m) => (
-          <a key={m.id} className="mod-card" href={m.url} target="_blank" rel="noreferrer">
-            {m.picture ? <img src={m.picture} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <span className="mod-blank" />}
-            <strong>{m.name}</strong>
-            <small className="muted">
-              by {m.author} · {m.endorsements.toLocaleString()} endorsements
-            </small>
-            <small>{m.summary}</small>
-          </a>
-        ))}
-      </div>
+      {error ? (
+        <p className="muted small">Couldn't load mods: {error}</p>
+      ) : !data!.domain ? (
+        <p className="muted small">NexusMods has no game matching this title, or it isn't a game NexusMods hosts mods for.</p>
+      ) : !data!.mods.length ? (
+        <p className="muted small">No trending mods for this game right now.</p>
+      ) : (
+        <div className="row-track mod-track">
+          {data!.mods.map((m) => (
+            <a key={m.id} className="mod-card" href={m.url} target="_blank" rel="noreferrer">
+              {m.picture ? <img src={m.picture} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <span className="mod-blank" />}
+              <strong>{m.name}</strong>
+              <small className="muted">
+                by {m.author} · {m.endorsements.toLocaleString()} endorsements
+              </small>
+              <small>{m.summary}</small>
+            </a>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

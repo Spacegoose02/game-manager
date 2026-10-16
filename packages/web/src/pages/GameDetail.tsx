@@ -167,7 +167,7 @@ export function GameDetail() {
 
       {!isAddon && <UpdatesPanel gameId={game.id} />}
 
-      {game.platform === "pc" && !isAddon && <ModsPanel gameId={game.id} />}
+      {game.platform === "pc" && !isAddon && <ModsPanel gameId={game.id} title={game.title} />}
 
       {!isAddon && <PreparePanel game={game} />}
 

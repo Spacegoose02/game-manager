@@ -651,9 +651,14 @@ function ServicesSection({ say }: { say: Msg }) {
         <Card
           title="Other services"
           actions={
-            <button className="primary" disabled={busy} onClick={() => void save("Saved")}>
-              Save
-            </button>
+            <>
+              <button disabled={busy || !c.nexus.apiKey} onClick={() => void save("", async () => (await api.testNexus()).message)}>
+                Save and test NexusMods
+              </button>
+              <button className="primary" disabled={busy} onClick={() => void save("Saved")}>
+                Save
+              </button>
+            </>
           }
         >
           <div className="field-grid">
@@ -674,7 +679,7 @@ function ServicesSection({ say }: { say: Msg }) {
               label="NexusMods API key"
               hint={
                 <>
-                  Shows trending mods on game pages.{" "}
+                  Shows a Trending mods row on each PC game's page, under the game details. Save and test NexusMods checks the key.{" "}
                   <a href="https://next.nexusmods.com/settings/api-keys" target="_blank" rel="noreferrer">
                     Get a key
                   </a>
