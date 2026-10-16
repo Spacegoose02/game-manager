@@ -32,18 +32,14 @@ Each top-level entry is one game:
 
 ## Installers and disc images
 
-Some games come as a setup program rather than a ready-to-play folder. LootDen spots these
-and marks them **Installer** or **Disc image**:
+Games that come as a setup program are marked **Installer** or **Disc image**:
 
 - **Disc image:** an `.iso`, `.mdf`/`.mds`, `.nrg`, `.cue`/`.bin` or `.ccd` file.
 - **Installer:** a `setup*.exe`, `install*.exe` or `.msi` near the top of the folder, with
   numbered data files beside it (`setup_game-1.bin`, `data1.cab`, `game-01.bin`), or with
   no other program that could be the game. GOG's offline installers are the common case.
 
-The server checks when it scans and when it imports a download; the desktop app checks
-again after unpacking, so an installer inside a zip is caught too.
-
-What happens next:
+The desktop app checks again after unpacking, so an installer inside a zip is caught too.
 
 1. A player's **Install** button says **Download installer**. After the download, the
    app shows **Run installer** instead of Play. It installs the game into an `Installed`
@@ -61,8 +57,8 @@ then use **Upload an installed folder**.
 
 ## Updates and DLC
 
-Patches and DLC that aren't a full game are kept out of the library and listed on the
-**Updates** page instead. LootDen recognises them two ways:
+Patches and DLC are kept out of the library and listed on the **Updates** page. They're
+recognised two ways:
 
 - **By folder:** anything inside a top-level `Updates` (or `Patches`) folder is an update,
   and anything inside `DLC` is DLC. A single patcher `.exe` or `.msi` counts there too.
@@ -85,8 +81,8 @@ fix a wrong match on the update's page (**Game, update or DLC**): pick the right
 there isn't one, or turn a misread entry back into a full game. One whose game isn't on the
 server shows as **Update only** and can't be installed by itself.
 
-**Full games with update names.** Some downloads are called "Update" but are really the whole
-game (a newer full copy). LootDen checks each package against its game:
+**Full games with update names.** Some downloads called "Update" are really a newer full copy
+of the game. Each package is checked against its game:
 
 - **Size:** a package at least 70% the size of its game is a full game (90% when the name says
   "v1.5 to v1.6"). It goes back in the library as `Game v2.1`, with the game's art.
@@ -94,10 +90,8 @@ game (a newer full copy). LootDen checks each package against its game:
   (`_CommonRedist`, `DirectX`) mean a full game; patch delta files (`.xdelta`, `.vcdiff`) or a
   lone `patch_*.exe` mean an update, whatever the size.
 
-Every update, DLC and reclassified game carries a badge saying why ("Update · folder",
-"Full game · size") with the detail in its tooltip; a dashed badge means there was little to go
-on. The Updates page lists the ones moved back to the library. An admin's choice on the
-package's page always wins.
+Each one gets a badge saying why ("Update · folder", "Full game · size"). An admin's choice on
+the package's page always wins.
 
 **Applying one (desktop app):** an update's **Apply update** button (DLC: **Add to game**)
 appears once its game is installed on that PC. The app downloads it, then:
@@ -113,8 +107,8 @@ The app records the game's version (from the server's file name at install time,
 update's), and warns before applying an update made for a different version or one the
 game already has. The command-line client does the same with `lootden apply`.
 
-The Downloads importer keeps the word "Update" or "DLC" in the names it gives imports, so
-they land on the Updates page instead of replacing the game.
+Imports from the download tools keep "Update" or "DLC" in the name, so they land on the
+Updates page instead of replacing the game.
 
 ## Console games (Emulation)
 
@@ -142,10 +136,9 @@ System folders: `ps1` (or `psx`), `ps2`, `ps3`, `xbox`, `psp`, `nes`, `snes`, `n
   Set `LOOTDEN_EMULATORJS_DATA` to a self-hosted copy of EmulatorJS's `data/` folder to
   avoid its CDN.
 
-## Imports from the Downloads page
+## Imports from the download tools
 
-If you use the optional download tools (Settings, Downloads), finished downloads are
-copied or moved into `/games`. Each step can be turned off:
+Finished downloads are copied or moved into `/games`. Each step can be turned off:
 
 - junk is removed (site links, NFOs, read-mes, "install tutorial" folders),
 - nested archives are unpacked,

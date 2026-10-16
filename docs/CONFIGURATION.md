@@ -1,12 +1,11 @@
 # Configuration
 
-Most things are set in the web UI under **Settings** (admins only). Environment variables
-cover what's needed before the UI exists (paths, the first admin, sign-in) and can preset
-the rest. When both are set, **the Settings page wins**.
+Most settings live in the web UI under **Settings** (admins only). Environment variables
+cover what's needed before the UI exists and can preset the rest. If both are set, the
+Settings page wins.
 
-Every variable uses the `LOOTDEN_` prefix. The `GM_` names from before the rename still
-work; if both are set, `LOOTDEN_` wins. [.env.example](../.env.example) has a commented
-copy for Docker Compose.
+Old `GM_` names still work; `LOOTDEN_` wins if both are set. [.env.example](../.env.example)
+is a commented copy for Docker Compose.
 
 ## Environment variables
 
@@ -79,11 +78,7 @@ copy for Docker Compose.
 | **Sign-in & services** | Public address, OIDC, IGDB / RAWG / SteamGridDB keys, itch.io and NexusMods keys |
 | **News & apps** | News feeds, YouTube rows, desktop app builds for the Get the app page |
 
-Keys and passwords entered there are stored in the database and are never sent back to
-the browser in full.
+Keys and passwords entered there are stored in the database and never sent back to the
+browser in full.
 
-## Your own logos
-
-Put your files in [brand/](../brand/README.md) with the names listed there (logo,
-wordmark, favicon, app icon, Playnite icon) and rebuild. Anything you leave out keeps
-the built-in raccoon.
+To use your own logos, see [brand/README.md](../brand/README.md).

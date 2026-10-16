@@ -2,141 +2,213 @@
 
 # LootDen
 
-> **Built with AI assistance.** LootDen was written with a lot of help from an AI assistant
-> (Anthropic's Claude), directed and reviewed by its maintainer. It has an automated test
-> suite and runs on the maintainer's own Unraid server, but it hasn't had an independent
-> security review, and parts of it (the Windows installer flow, emulators, some download
-> clients) have had little real-world testing. Read the code and the settings before you
-> trust it with anything important. Don't expose it to the internet without a reverse
-> proxy, HTTPS and sign-in in front of it.
-
-**A raccoon's den for your loot.** LootDen is a self-hosted library for the PC games you
-already own. Put your DRM-free installers and game folders on a home server; LootDen
-catalogues them with covers and details, and anyone in your household can install them
-on their own PC with one click, like a small private Steam.
-
-- **Who it's for:** people with a pile of GOG, itch.io, Humble or other DRM-free games
-  on a NAS or Unraid box, who want a nice way for the family to browse and install them.
-- **What it isn't:** a store, a launcher for Steam/Epic games, or a way to get games you
-  don't own. See [Using LootDen responsibly](#using-lootden-responsibly).
-
-<!-- Screenshots: add images to docs/screenshots/ and link them here.
-![Home](docs/screenshots/home.png)
-![Game page](docs/screenshots/game.png)
-![Desktop app](docs/screenshots/desktop.png)
--->
+A self-hosted library for the DRM-free PC games you own. The server runs in Docker
+(I use it on Unraid), catalogues a games folder and serves a web UI. The desktop app
+installs games from it on any PC in the house.
 
 ## Features
 
-- **Library server** (Docker, made for Unraid): scans and watches your games folder, finds
-  covers, descriptions, genres, age ratings and controller support (IGDB, RAWG, Steam,
-  PCGamingWiki, SteamGridDB), and serves a web UI with a home page, filters, a release
-  calendar, news, videos, Discover, and 23 themes (the raccoon logo takes each theme's
-  colours, or stays a black, grey and white raccoon).
-- **Desktop app** for Windows and Linux: pick a drive, press Install. It downloads (with
-  resume), unpacks zip / 7z / rar, deletes the archives, and tracks play time. Installers
-  and disc images get a **Run installer** button, and an admin can upload the installed
-  game so everyone after them gets a ready-to-play download. It runs in the system tray and
-  updates itself from the server.
-- **Updates and DLC:** patches and DLC (in an `Updates` or `DLC` folder, or named like
-  `Game Update v1.3`) get their own Updates page instead of cluttering the library. The
-  desktop app applies them over the installed game with a backup, so they can be undone.
-  A download named "Update" that's as big as the game is recognised as the full game.
-- **Library views:** grid, compact, cover wall or list, grouped by genre, system, installed
-  or A to Z, remembered per profile. The **Installed** tab lists what's ready to play with
-  Play and Open folder buttons.
-- **Profiles:** local accounts or single sign-on (OIDC, TinyAuth, forward auth), random
-  raccoon avatars, kid profiles that only see kid-safe games, a backlog and journal per
-  game, and per-profile play time.
-- **Save sync:** saves are backed up to the server when you close a game and restored on
-  another PC.
-- **Emulation:** console games in their own section, with emulators set up by the desktop
-  app and many systems playable in the browser. The first controller is set up as player 1,
-  and the whole UI can be browsed with a gamepad.
-- **Optional download tools** for admins: Prowlarr search, qBittorrent / Transmission /
-  Deluge / SABnzbd hand-off, import clean-up, a wanted list, virus scanning and alerts.
-  The **Download Manager** takes pasted links from file hosts (MediaFire, Datanodes,
-  Pixeldrain, Buzzheavier, Google Drive or plain file links), finds the real file behind
-  each page and downloads the game on the server. Every game page has a **Latest releases**
-  lookup (Prowlarr, newest first, and 1337x).
-- **Release sources:** a small plugin layer for feeds that list new games (GOG, itch.io,
-  RSS, or your own), shown on Discover and used for wishlist alerts.
-- **Playnite plugin** and a **command-line client** (`lootden`) for scripting.
+- Scans and watches a games folder, one folder or archive per game.
+- Pulls covers, descriptions, genres, age ratings and controller support from IGDB, RAWG,
+  Steam, PCGamingWiki and SteamGridDB. Steam and PCGamingWiki work without keys.
+- Web UI with grid, cover wall and list views, filters, a release calendar, news, videos,
+  a Discover page and 23 themes. Works with a gamepad.
+- Desktop app for Windows and Linux: download with resume, unpack zip/7z/rar, delete the
+  archives, play, track play time, uninstall. Runs in the tray and updates itself from the
+  server.
+- Installers and disc images: run the installer once on a PC, then an admin can upload the
+  installed folder so everyone else gets a ready-to-play download.
+- Updates and DLC are kept on their own page and applied over an installed game with a
+  backup, so they can be undone.
+- Profiles: local accounts, OIDC or forward-auth sign-in, kid profiles that only see
+  kid-safe games, per-profile play time, backlog and journal.
+- Save backups to the server when a game closes, restored on another PC.
+- Emulation: console games in their own section. The desktop app sets up RetroArch,
+  DuckStation, PCSX2, RPCS3 and xemu, and many systems also play in the browser.
+- Optional download tools for admins: Prowlarr search, qBittorrent, Transmission, Deluge
+  and SABnzbd, a download manager for direct file-host links, import clean-up, a wanted
+  list, virus scanning and alerts (Apprise).
+- `lootden` command-line client and a Playnite plugin.
 
-## Quick start (Docker)
+## Running the server
+
+### Docker Compose
 
 ```sh
 git clone https://github.com/Spacegoose02/lootden.git
 cd lootden
-cp .env.example .env        # set GAMES_PATH and APPDATA_PATH at least
-docker compose up -d        # or: docker compose up -d --build to build it yourself
+cp .env.example .env    # set GAMES_PATH and APPDATA_PATH
+docker compose up -d    # add --build to build the image from source
 ```
 
-Open `http://<your-server>:8080`. The first visit asks you to create the admin account
-(or set `LOOTDEN_ADMIN_USERNAME` and `LOOTDEN_ADMIN_PASSWORD` in `.env`).
+Open `http://<server>:8080` (or whatever `HOST_PORT` is). The first visit asks you to create
+the admin account, unless you set `LOOTDEN_ADMIN_USERNAME` and `LOOTDEN_ADMIN_PASSWORD`.
 
-Plain `docker run`:
+`.env` values used by the compose file:
+
+| Variable | Default | |
+| --- | --- | --- |
+| `GAMES_PATH` | `/mnt/user/games` | Mounted at `/games` |
+| `APPDATA_PATH` | `/mnt/user/appdata/lootden` | Mounted at `/data` (database, covers, saves, app builds) |
+| `DOWNLOADS_PATH` | `/mnt/user/downloads` | Mounted at `/downloads`, only needed for the download tools |
+| `HOST_PORT` | `8080` | Port on the host |
+| `PUID`, `PGID` | `99`, `100` | User the server runs as |
+
+### docker run
 
 ```sh
 docker run -d --name lootden -p 8080:8080 \
-  -v /path/to/appdata/lootden:/data \
-  -v /path/to/games:/games \
+  -v /mnt/user/appdata/lootden:/data \
+  -v /mnt/user/games:/games \
   ghcr.io/spacegoose02/lootden:latest
 ```
 
-**On Unraid**, follow [docs/UNRAID.md](docs/UNRAID.md).
+### Unraid
 
-Then put your games in the games folder, **one folder or archive per game**:
+Docker tab, Add Container:
+
+| Field | Value |
+| --- | --- |
+| Repository | `ghcr.io/spacegoose02/lootden:latest` |
+| Network | Bridge |
+| WebUI | `http://[IP]:[PORT:8080]/` |
+| Port | container `8080`, host any free port |
+| Path | container `/data`, host `/mnt/user/appdata/lootden` |
+| Path | container `/games`, host your PC games share |
+| Path (optional) | container `/downloads`, host the share your download clients finish into |
+
+The container starts as root, sets the owner of `/data` to `PUID:PGID` (99:100,
+nobody:users) and then runs as that user. If you add `--user 99:100` under Extra
+Parameters, it skips that step, so run `chown -R 99:100 /mnt/user/appdata/lootden` first.
+
+Leave `/games` writable if you use the download tools, since imports are written there.
+
+Compose Manager works too: copy the repo to the server, create `.env` as above and point a
+stack at the folder.
+
+### Games folder
+
+Each entry directly inside `/games` is one game:
 
 ```
 /games/
-  Stardew Valley/          <- a folder: everything inside is the game
-  Hades.zip                <- a single archive is a game too
-  Celeste/setup_celeste.exe + setup_celeste-1.bin   <- an installer, set up once in the app
+  Stardew Valley/                 a folder: everything in it is the game
+  Hades.zip                       a single archive
+  Celeste/setup_celeste.exe ...   an installer, set up once from the desktop app
+  Updates/                        patches, shown on the Updates page
+  DLC/
+  Emulation/snes/Super Mario World (USA).sfc
 ```
 
-More on layouts, consoles and installers: [docs/LIBRARY.md](docs/LIBRARY.md).
+If your share is split by platform (`roms/pc`, `roms/snes`), point `/games` at the PC
+folder, otherwise each platform folder shows up as one game. More detail on installers,
+updates, DLC and console folders is in [docs/LIBRARY.md](docs/LIBRARY.md).
 
-## Install games on your PC
+### Settings
 
-1. In the web UI, open **Get the app** and download the desktop app for your system.
-2. Start it, enter your server's address, and sign in.
-3. Open a game and press **Install**.
+Metadata keys, sign-in, download clients, release sources and alerts are set in the web
+UI under Settings. Environment variables can preset most of them; the full list is in
+[docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
-RAR archives need a full 7-Zip installed (zip and 7z work out of the box). Details,
-the command-line client and the Playnite plugin: [docs/CLIENTS.md](docs/CLIENTS.md).
+Keep it on your LAN, or put it behind a reverse proxy with HTTPS and sign-in. Don't
+forward the port straight to the internet.
 
-## Documentation
+### Upgrading
 
-| Guide | What's in it |
+Back up the appdata folder, then pull the new image and recreate the container
+(`docker compose pull && docker compose up -d`, or Apply update on Unraid). Database
+changes run on start and there is no downgrade, so keep the backup until you're happy.
+
+Older installs from when this was called Game Manager keep working: an existing
+`game-manager.db` is still used and `GM_` variables are still read (`LOOTDEN_` wins if
+both are set).
+
+## Desktop app
+
+1. In the web UI, open **Get the app** and download the build for your system. If the page
+   is empty, an admin presses **Get latest release** under Settings, News & apps (or
+   uploads builds, or copies them into `<appdata>/clients`).
+2. Start it, enter the server address (e.g. `http://192.168.1.10:8080`) and sign in.
+3. Open a game, pick a drive and press **Install**.
+
+| File | |
 | --- | --- |
-| [docs/README.md](docs/README.md) | Start here: an overview of all the docs |
-| [docs/UNRAID.md](docs/UNRAID.md) | Running on Unraid, permissions, download clients |
-| [docs/LIBRARY.md](docs/LIBRARY.md) | How to lay out games, consoles, installers and disc images |
-| [docs/CLIENTS.md](docs/CLIENTS.md) | Desktop app, `lootden` CLI, Playnite, Yamtrack |
-| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Every environment variable and every Settings section |
-| [docs/UPGRADING.md](docs/UPGRADING.md) | Backups, upgrades, and the rename from Game Manager |
-| [docs/FAQ.md](docs/FAQ.md) | Common questions and fixes |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the pieces fit together |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Building, testing and sending changes |
-| [ROADMAP.md](ROADMAP.md) | What's done and what's next |
+| `LootDen-Setup-<version>.exe` | Windows installer |
+| `LootDen-<version>-portable.exe` | Windows, no install |
+| `LootDen-<version>-linux-*.AppImage`, `.deb` | Linux |
 
-## Using LootDen responsibly
+The builds aren't code-signed, so Windows SmartScreen will warn (More info, Run anyway).
+zip and 7z work out of the box; RAR needs a full 7-Zip installed (`7zz` or `p7zip-full`
+on Linux). The `.deb` doesn't update itself; the other builds do.
 
-LootDen manages files you put on your own server. You're responsible for only adding
-games you own or otherwise have the right to use, and for following each game's licence
-(many DRM-free licences allow copies for your own household; check yours). The optional
-download features talk to indexers and download clients **you** configure; LootDen doesn't
-include or recommend any source of games. If you expose it outside your home network,
-protect it with HTTPS and sign-in.
+## Command-line client
 
-## Project status
+Download `lootden-cli-win-x64.zip` or `lootden-cli-linux-x64.tar.gz` from Get the app.
 
-LootDen is a hobby project under active development (see the [changelog of
-releases](https://github.com/Spacegoose02/lootden/releases)). Expect rough edges, and back
-up your `appdata` folder before upgrading. Bug reports and pull requests are welcome.
+```sh
+lootden login <username> --server http://192.168.1.10:8080
+lootden list zelda
+lootden install "Stardew Valley" --dest D:\Games
+lootden play "Stardew Valley"
+lootden installed
+lootden uninstall "Stardew Valley"
+lootden updates
+lootden help
+```
 
-## License
+`LOOTDEN_SERVER`, `LOOTDEN_TOKEN`, `LOOTDEN_INSTALL_DIR` and `LOOTDEN_7Z` override the
+config file (`lootden config path` shows where it is).
 
-No licence has been chosen yet; see [LICENSE](LICENSE). Until one is added, all rights
-are reserved by the author.
+## Playnite
+
+See [playnite/README.md](playnite/README.md).
+
+## Development
+
+Needs Node 22.
+
+```sh
+npm install
+npm test                 # builds everything and runs the tests
+
+# server on :8080, using local folders
+LOOTDEN_GAMES_DIR=./dev/games LOOTDEN_DATA_DIR=./dev/data npm run dev:server
+
+# web UI on :5173 with hot reload, proxying /api to :8080
+npm run dev:web
+
+# desktop app
+npm run build
+npm start -w @lootden/desktop
+npm run dist:win -w @lootden/desktop     # or dist:linux, output in packages/desktop/release
+
+# Docker image, started the way Unraid starts it
+docker build -t lootden . && sh scripts/docker-smoke.sh lootden
+```
+
+On Windows PowerShell set the variables with `$env:LOOTDEN_GAMES_DIR = "..."` first.
+
+| Folder | |
+| --- | --- |
+| `packages/shared` | Types and helpers used by everything |
+| `packages/server` | Fastify API, SQLite, scanner, metadata, sign-in, download tools |
+| `packages/web` | React web UI, also what the desktop app shows |
+| `packages/client` | Install engine and the `lootden` CLI |
+| `packages/desktop` | Electron app |
+| `playnite/LootDenLibrary` | Playnite plugin (C#) |
+| `brand` | Replacement logos, see [brand/README.md](brand/README.md) |
+
+New release sources go in `packages/server/src/sources/adapters/`, see
+[the sources README](packages/server/src/sources/README.md).
+
+To release, bump the version in every `package.json`, `package-lock.json` and
+`packages/server/src/app.ts`, then push a `v*` tag. GitHub Actions publishes the image to
+`ghcr.io/spacegoose02/lootden` and attaches the desktop apps, CLI and Playnite plugin to a
+GitHub release.
+
+## Notes
+
+Only add games you own or have the right to use. LootDen doesn't include any game source;
+the download tools only talk to indexers and clients you set up yourself.
+
+No licence has been chosen yet, so all rights are reserved for now (see [LICENSE](LICENSE)).
