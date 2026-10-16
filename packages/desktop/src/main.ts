@@ -963,6 +963,12 @@ const TITLEBAR_HEIGHT = 40;
 const frameState = () => ({ custom: customFrame, fullscreen: !!win?.isFullScreen(), height: TITLEBAR_HEIGHT, handheld: handheldActive(settings.get()) });
 const sendFrame = () => win?.webContents.send("gm:frame", frameState());
 
+/** The window is on another site than the server, which only a sign-in redirect leads to. */
+function onSignInPages(): boolean {
+  const current = win?.webContents.getURL() ?? "";
+  return !!origin() && /^https?:\/\//.test(current) && !current.startsWith(origin() + "/");
+}
+
 async function createWindow(): Promise<void> {
   const s = settings.get();
   win = new BrowserWindow({
@@ -987,8 +993,12 @@ async function createWindow(): Promise<void> {
   });
   win.webContents.on("will-navigate", (event, url) => {
     if (url.startsWith("file://") || (origin() && url.startsWith(origin()))) return;
+    // Single sign-on: the server redirects the window to the identity provider, which may
+    // hand on to another (TinyAuth to Google). Those pages keep their cookies in this
+    // window, so they stay here until the provider sends the window back to the server.
+    if (onSignInPages()) return;
     event.preventDefault();
-    if (!url.startsWith(`${origin()}/api/auth/oidc`)) void shell.openExternal(url);
+    void shell.openExternal(url);
   });
   // Closing hides the window to the tray: the app keeps tracking play time and installs.
   win.on("close", (event) => {
@@ -1010,6 +1020,8 @@ async function createWindow(): Promise<void> {
   win.on("leave-full-screen", sendFrame);
   win.webContents.on("before-input-event", (_e, input) => {
     if (input.type === "keyDown" && input.key === "F11") win?.setFullScreen(!win.isFullScreen());
+    // The provider's pages have no LootDen title bar; Escape backs out of a sign-in.
+    if (input.type === "keyDown" && input.key === "Escape" && onSignInPages()) void win?.loadURL(origin());
   });
   if (s.serverUrl) await win.loadURL(s.serverUrl).catch(() => win?.loadFile(path.join(__dirname, "..", "setup", "index.html")));
   else await win.loadFile(path.join(__dirname, "..", "setup", "index.html"));
@@ -1034,6 +1046,10 @@ app.on("open-url", (e, url) => {
 app.on("window-all-closed", () => {
   if (quitting || !tray || !settings.get().closeToTray) app.quit();
 });
+
+// Google refuses sign-in from browsers that name themselves Electron, so the app presents as
+// the Chrome it is built on. Nothing on the server depends on the app's user agent.
+app.userAgentFallback = app.userAgentFallback.replace(/ (?:Electron|LootDen|@lootden\/desktop)\/\S+/gi, "");
 
 void app.whenReady().then(async () => {
   settings = new SettingsStore(path.join(app.getPath("userData"), "settings.json"));
